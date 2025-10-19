@@ -672,6 +672,27 @@
                     <label class="form-label">Pack Size (Optional)</label>
                     <input type="number" class="form-input" id="materialPackSize" placeholder="1">
                 </div>
+                <div class="form-group">
+                    <label class="form-label">Currency</label>
+                    <select class="form-select" id="materialCurrency">
+                        <option value="USD">USD</option>
+                        <option value="EUR">EUR</option>
+                        <option value="GBP">GBP</option>
+                        <option value="CAD">CAD</option>
+                        <option value="AUD">AUD</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Sold as pack/kit?</label>
+                    <div style="display:flex; gap:8px; align-items:center;">
+                        <input type="checkbox" id="materialIsPack" />
+                        <label for="materialIsPack" style="font-size:13px; color:#ccc;">Yes — this material is sold as a pack/kit</label>
+                    </div>
+                    <div id="materialPackOptions" style="margin-top:8px; display:none;">
+                        <label class="form-label">Items per pack</label>
+                        <input type="number" class="form-input" id="materialPackSizeOption" placeholder="e.g. 10">
+                    </div>
+                </div>
             </div>
             <div class="form-group">
                 <label class="form-label">Vendor *</label>
@@ -755,6 +776,21 @@
         </div>
     </div>
 
+    <!-- Import Preview Modal -->
+    <div class="modal" id="importPreviewModal">
+        <div class="modal-content">
+            <div class="modal-header">Import Preview</div>
+            <div id="importPreviewBody">
+                <!-- Filled dynamically -->
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="closeModal('importPreviewModal')">Cancel</button>
+                <button class="btn btn-secondary" onclick="finalizeImport('merge')">Merge (Add non-duplicates)</button>
+                <button class="btn" onclick="finalizeImport('replace')">Replace (Overwrite existing)</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         let appData = {
             materials: [],
@@ -766,6 +802,9 @@
         let editingMaterialId = null;
         let editingProjectId = null;
         let editingNoteIndex = null;
+    // import mode flags: 'merge' or 'replace' - set before file input is triggered
+    let importModeProjects = 'merge';
+    let importModeMaterials = 'merge';
         // temp arrays for modal editing UI
         let tempProjectTags = [];
         let tempProjectLinks = [];
@@ -868,6 +907,16 @@
             importMaterialsInput.id = 'importMaterialsFile';
             importMaterialsInput.addEventListener('change', handleMaterialsImport);
             document.body.appendChild(importMaterialsInput);
+
+            // material isPack toggle to show pack options
+            const materialIsPackEl = document.getElementById('materialIsPack');
+            if (materialIsPackEl) {
+                materialIsPackEl.addEventListener('change', (e) => {
+                    const opts = document.getElementById('materialPackOptions');
+                    if (!opts) return;
+                    opts.style.display = e.target.checked ? 'block' : 'none';
+                });
+            }
         }
 
         function switchTab(tabName) {
@@ -1090,6 +1139,8 @@
         }
 
         function importProject() {
+            const replace = confirm('Import Projects:\n\nClick OK to REPLACE all existing projects with the imported file. Click Cancel to MERGE (skip duplicates).');
+            importModeProjects = replace ? 'replace' : 'merge';
             document.getElementById('importFile').click();
         }
 
@@ -1105,37 +1156,67 @@
                     const projectsToImport = Array.isArray(parsed) ? parsed : [parsed];
 
                     const importedIds = [];
+                    const normalizedImported = [];
+                    let skippedDuplicates = 0;
 
                     for (let i = 0; i < projectsToImport.length; i++) {
                         const proj = projectsToImport[i];
                         const result = validateProjectSchema(proj);
                         if (!result.valid) {
-                            alert('Failed to import project at index ' + i + ': Invalid schema.\n' + result.errors.join('\n'));
                             // skip invalid project but continue with others
+                            console.warn('Skipping invalid project at index', i, result.errors);
                             continue;
                         }
 
-                        // normalize/ensure required fields
-                        const newProj = JSON.parse(JSON.stringify(proj)); // shallow clone
-                        newProj.id = 'proj_' + Date.now() + '_' + Math.random().toString(36).slice(2,8);
-                        newProj.metadata = newProj.metadata || {};
+                        // prepare normalized project (but keep original incoming id for dedupe checks)
+                        const incomingId = proj.id || null;
+                        const clone = JSON.parse(JSON.stringify(proj));
+                        const newProj = {
+                            id: 'proj_' + Date.now() + '_' + Math.random().toString(36).slice(2,8),
+                            name: clone.name,
+                            metadata: clone.metadata || {},
+                            boms: clone.boms || { amazon: [], aliexpress: [], temu: [] },
+                            shipping: clone.shipping || {},
+                            notes: Array.isArray(clone.notes) ? clone.notes : []
+                        };
                         newProj.metadata.creationDate = newProj.metadata.creationDate || new Date().toISOString().split('T')[0];
                         newProj.metadata.description = newProj.metadata.description || '';
                         newProj.metadata.tags = Array.isArray(newProj.metadata.tags) ? newProj.metadata.tags : [];
                         newProj.metadata.links = Array.isArray(newProj.metadata.links) ? newProj.metadata.links : [];
-                        newProj.boms = newProj.boms || { amazon: [], aliexpress: [], temu: [] };
                         newProj.boms.amazon = Array.isArray(newProj.boms.amazon) ? newProj.boms.amazon : [];
                         newProj.boms.aliexpress = Array.isArray(newProj.boms.aliexpress) ? newProj.boms.aliexpress : [];
                         newProj.boms.temu = Array.isArray(newProj.boms.temu) ? newProj.boms.temu : [];
-                        newProj.shipping = newProj.shipping || {};
-                        newProj.notes = Array.isArray(newProj.notes) ? newProj.notes : [];
 
-                        appData.projects.push(newProj);
-                        importedIds.push(newProj.id);
+                        if (importModeProjects === 'replace') {
+                            normalizedImported.push(newProj);
+                            importedIds.push(newProj.id);
+                        } else {
+                            // merge mode - skip duplicates by original id (if present) or by case-insensitive name
+                            const duplicate = appData.projects.find(p => (incomingId && p.id === incomingId) || (p.name && p.name.toLowerCase() === (clone.name || '').toLowerCase()));
+                            if (duplicate) {
+                                skippedDuplicates++;
+                                continue;
+                            }
+                            appData.projects.push(newProj);
+                            importedIds.push(newProj.id);
+                        }
+                    }
+
+                    if (importModeProjects === 'replace') {
+                        if (normalizedImported.length === 0) {
+                            alert('No valid projects found to import');
+                            return;
+                        }
+                        appData.projects = normalizedImported;
+                        saveData();
+                        renderProjects();
+                        selectProject(appData.projects[0].id);
+                        alert(`Import complete. Replaced projects with ${normalizedImported.length} imported projects.`);
+                        return;
                     }
 
                     if (importedIds.length === 0) {
-                        alert('No valid projects found to import');
+                        alert('No new projects were imported (all were duplicates or invalid)');
                         return;
                     }
 
@@ -1143,12 +1224,17 @@
                     renderProjects();
                     // select the first imported project
                     selectProject(importedIds[0]);
+                    if (skippedDuplicates > 0) {
+                        alert(`Import complete. Imported: ${importedIds.length}. Skipped duplicates: ${skippedDuplicates}.`);
+                    }
                 } catch (err) {
                     alert('Failed to import project: Invalid file format');
                 }
             };
             reader.readAsText(file);
             e.target.value = '';
+            // reset import mode
+            importModeProjects = 'merge';
         }
         
         function exportAllProjects() {
@@ -1196,7 +1282,7 @@
                 <div class="material-item">
                     <div style="font-weight: 500; margin-bottom: 4px;">${escapeHtml(m.name)}</div>
                     <div style="font-size: 12px; color: #999; margin-bottom: 8px;">
-                        ${m.vendor.toUpperCase()} • ${m.pricePer.toFixed(2)}${m.packSize > 1 ? ` (Pack of ${m.packSize})` : ''}
+                        ${m.vendor.toUpperCase()} • ${formatCurrency(m.pricePer, m.currency)}${m.isPack ? ` (Pack of ${m.packSizeOption || m.packSize || 1})` : ''}
                     </div>
                     <div style="display: flex; gap: 5px;">
                         <button class="btn btn-secondary btn-small" onclick="editMaterial('${m.id}')">Edit</button>
@@ -1219,6 +1305,15 @@
             document.getElementById('materialPrice').value = '';
             document.getElementById('materialPackSize').value = '';
             document.getElementById('materialVendor').value = 'amazon';
+            // default currency and pack options
+            const currencyEl = document.getElementById('materialCurrency');
+            if (currencyEl) currencyEl.value = 'USD';
+            const isPackEl = document.getElementById('materialIsPack');
+            if (isPackEl) isPackEl.checked = false;
+            const packOpts = document.getElementById('materialPackOptions');
+            if (packOpts) packOpts.style.display = 'none';
+            const packSizeOptionEl = document.getElementById('materialPackSizeOption');
+            if (packSizeOptionEl) packSizeOptionEl.value = '';
             openModal('materialModal');
         }
 
@@ -1233,6 +1328,15 @@
             document.getElementById('materialPrice').value = material.pricePer;
             document.getElementById('materialPackSize').value = material.packSize || '';
             document.getElementById('materialVendor').value = material.vendor;
+            // populate currency and pack options
+            const currencyEl = document.getElementById('materialCurrency');
+            if (currencyEl) currencyEl.value = material.currency || 'USD';
+            const isPackEl = document.getElementById('materialIsPack');
+            if (isPackEl) isPackEl.checked = !!material.isPack;
+            const packOpts = document.getElementById('materialPackOptions');
+            if (packOpts) packOpts.style.display = material.isPack ? 'block' : 'none';
+            const packSizeOptionEl = document.getElementById('materialPackSizeOption');
+            if (packSizeOptionEl) packSizeOptionEl.value = material.packSizeOption || '';
             openModal('materialModal');
         }
 
@@ -1252,6 +1356,9 @@
             }
 
             const vendor = document.getElementById('materialVendor').value;
+            const currency = document.getElementById('materialCurrency')?.value || 'USD';
+            const isPack = !!document.getElementById('materialIsPack')?.checked;
+            const packSizeOption = parseInt(document.getElementById('materialPackSizeOption')?.value) || null;
 
             // Check for duplicates
             const duplicate = appData.materials.find(m => 
@@ -1271,8 +1378,11 @@
                 description: document.getElementById('materialDescription').value.trim(),
                 url,
                 pricePer: price,
+                currency,
                 packSize: parseInt(document.getElementById('materialPackSize').value) || 1,
-                vendor
+                vendor,
+                isPack: isPack,
+                packSizeOption: isPack ? packSizeOption : null
             };
 
             if (editingMaterialId) {
@@ -1312,6 +1422,7 @@
         }
 
         function importMaterials() {
+            // Trigger file selection then show preview once parsed
             document.getElementById('importMaterialsFile').click();
         }
 
@@ -1323,51 +1434,94 @@
             reader.onload = (event) => {
                 try {
                     const materials = JSON.parse(event.target.result);
-                    
+
                     if (!Array.isArray(materials)) {
                         alert('Invalid materials file format');
                         return;
                     }
 
+                    // show preview modal with counts and allow user to choose Replace or Merge
+                    showImportPreview('materials', materials);
+
+                    // Replace mode: overwrite all existing materials with validated ones
+                    if (importModeMaterials === 'replace') {
+                        const normalized = [];
+                        let invalid = 0;
+
+                        materials.forEach(mat => {
+                            const v = validateMaterialSchema(mat);
+                            if (!v.valid) {
+                                invalid++;
+                                return;
+                            }
+                            normalized.push({
+                                id: 'mat_' + Date.now() + '_' + Math.random().toString(36).slice(2,8),
+                                name: mat.name,
+                                description: mat.description || '',
+                                url: mat.url,
+                                pricePer: parseFloat(mat.pricePer) || 0,
+                                packSize: parseInt(mat.packSize) || 1,
+                                vendor: mat.vendor,
+                                currency: mat.currency || 'USD',
+                                isPack: !!mat.isPack,
+                                packSizeOption: mat.packSizeOption || null
+                            });
+                        });
+
+                        if (normalized.length === 0) {
+                            alert('No valid materials found to import');
+                            return;
+                        }
+
+                        appData.materials = normalized;
+                        saveData();
+                        renderMaterials();
+                        alert(`Import complete. Replaced materials with ${normalized.length} imported items.`);
+                        return;
+                    }
+
+                    // Merge mode: add non-duplicates
                     let imported = 0;
                     let duplicates = 0;
                     let invalid = 0;
 
-                    materials.forEach(newMat => {
-                        const v = validateMaterialSchema(newMat);
+                    materials.forEach(mat => {
+                        const v = validateMaterialSchema(mat);
                         if (!v.valid) {
                             invalid++;
                             return;
                         }
 
-                        // Check for duplicates
-                        const exists = appData.materials.find(m => 
-                            m.name === newMat.name && 
-                            m.vendor === newMat.vendor && 
-                            m.url === newMat.url
-                        );
+                        const exists = appData.materials.find(m => {
+                            // match by id if present on imported item, otherwise by name+vendor+url
+                            if (mat.id && m.id === mat.id) return true;
+                            return (m.name && m.name.toLowerCase() === (mat.name || '').toLowerCase()) && m.vendor === mat.vendor && m.url === mat.url;
+                        });
 
-                        if (!exists) {
-                            // normalize minimal fields
-                            const safeMat = {
-                                id: 'mat_' + Date.now() + '_' + Math.random().toString(36).slice(2,8),
-                                name: newMat.name,
-                                description: newMat.description || '',
-                                url: newMat.url,
-                                pricePer: parseFloat(newMat.pricePer) || 0,
-                                packSize: parseInt(newMat.packSize) || 1,
-                                vendor: newMat.vendor
-                            };
-                            appData.materials.push(safeMat);
-                            imported++;
-                        } else {
+                        if (exists) {
                             duplicates++;
+                            return;
                         }
+
+                        const safeMat = {
+                            id: 'mat_' + Date.now() + '_' + Math.random().toString(36).slice(2,8),
+                            name: mat.name,
+                            description: mat.description || '',
+                            url: mat.url,
+                            pricePer: parseFloat(mat.pricePer) || 0,
+                            packSize: parseInt(mat.packSize) || 1,
+                            vendor: mat.vendor,
+                            currency: mat.currency || 'USD',
+                            isPack: !!mat.isPack,
+                            packSizeOption: mat.packSizeOption || null
+                        };
+
+                        appData.materials.push(safeMat);
+                        imported++;
                     });
 
                     saveData();
                     renderMaterials();
-                    
                     alert(`Import complete!\nImported: ${imported}\nSkipped (duplicates): ${duplicates}\nInvalid entries: ${invalid}`);
                 } catch (err) {
                     alert('Failed to import materials: Invalid file format');
@@ -1377,29 +1531,7 @@
             e.target.value = '';
         }
 
-        // BOM management
-        // Project-level grand total removed per user request. Per-vendor totals remain in each section.
-
-        function renderBOMs() {
-            const project = appData.projects.find(p => p.id === appData.currentProjectId);
-            if (!project) return;
-
-            ['amazon', 'aliexpress', 'temu'].forEach(vendor => {
-                renderBOM(vendor, project.boms[vendor]);
-            });
-        }
-
         function renderBOM(vendor, items) {
-            const container = document.getElementById(`${vendor}BOM`);
-            
-            if (!items || items.length === 0) {
-                container.innerHTML = '<div class="empty-state" style="padding: 20px;">No items yet</div>';
-                // still update header total
-                const totalSpan = document.getElementById(vendor + 'Total');
-                if (totalSpan) totalSpan.textContent = '0.00';
-                return;
-            }
-
             let subtotal = 0;
             const rows = items.map((item, index) => {
                 const packMultiplier = Math.ceil(item.quantity / (item.packSize || 1));
@@ -1540,7 +1672,7 @@
             dropdown.innerHTML = results.map((m, i) => `
                 <div class="lookup-item" data-idx="${i}" onclick="selectBomLookup(${i})">
                     <div>${escapeHtml(m.name)}</div>
-                    <div class="lookup-meta">${escapeHtml(m.vendor.toUpperCase())} • ${m.pricePer.toFixed(2)}</div>
+                    <div class="lookup-meta">${escapeHtml(m.vendor.toUpperCase())} • ${formatCurrency(m.pricePer, m.currency)}</div>
                 </div>
             `).join('');
             dropdown.style.display = 'block';
@@ -1845,6 +1977,25 @@
             });
         }
 
+        // Currency formatting helper
+        const _currencyLocaleMap = {
+            USD: 'en-US',
+            EUR: 'de-DE',
+            GBP: 'en-GB',
+            CAD: 'en-CA',
+            AUD: 'en-AU'
+        };
+
+        function formatCurrency(amount, currency) {
+            const cur = currency || 'USD';
+            const locale = _currencyLocaleMap[cur] || navigator.language || 'en-US';
+            try {
+                return new Intl.NumberFormat(locale, { style: 'currency', currency: cur }).format(Number(amount) || 0);
+            } catch (e) {
+                return (Number(amount) || 0).toFixed(2) + ' ' + cur;
+            }
+        }
+
         // Lightweight JSON schema validators for imports
         function validateProjectSchema(project) {
             const errors = [];
@@ -1993,6 +2144,228 @@
         function removeProjectLink(idx) {
             tempProjectLinks.splice(idx, 1);
             renderProjectLinksUI();
+        }
+
+        // Import preview helpers
+        let _pendingImport = { type: null, items: null, details: null };
+        let _lastImportSnapshot = null;
+
+        function showImportPreview(type, items) {
+            _pendingImport.type = type;
+            _pendingImport.items = items;
+
+            const body = document.getElementById('importPreviewBody');
+            if (!body) return;
+
+            // build detailed lists
+            const dupList = [];
+            const invalidList = [];
+            const newList = [];
+            const validList = [];
+
+            if (type === 'materials') {
+                items.forEach((mat, idx) => {
+                    const v = validateMaterialSchema(mat);
+                    if (!v.valid) { invalidList.push({ idx, mat, errors: v.errors }); return; }
+                    const exists = appData.materials.find(m => (mat.id && m.id === mat.id) || ((m.name && m.name.toLowerCase() === (mat.name||'').toLowerCase()) && m.vendor === mat.vendor && m.url === mat.url));
+                    if (exists) dupList.push({ idx, mat });
+                    else newList.push({ idx, mat });
+                    validList.push({ idx, mat });
+                });
+
+                _pendingImport.details = { duplicates: dupList, invalid: invalidList, newItems: newList, valid: validList };
+
+                body.innerHTML = `
+                    <p>Total entries in file: <strong>${items.length}</strong></p>
+                    <p>Valid: <strong>${validList.length}</strong></p>
+                    <p>Potential new (if merged): <strong>${newList.length}</strong></p>
+                    <p>Duplicates (will be skipped if merging): <strong>${dupList.length}</strong></p>
+                    <p>Invalid entries: <strong>${invalidList.length}</strong></p>
+                    <p style="font-size:12px;color:#999;">Choose "Merge" to keep existing items and add only new ones. Choose "Replace" to overwrite your current materials with only the valid entries from this file.</p>
+                    <div style="margin-top:12px; display:flex; gap:8px;">
+                        <button class="btn btn-secondary btn-small" onclick="togglePreviewDetails('newItems')">Show New Items (${newList.length})</button>
+                        <button class="btn btn-secondary btn-small" onclick="togglePreviewDetails('duplicates')">Show Duplicates (${dupList.length})</button>
+                        <button class="btn btn-secondary btn-small" onclick="togglePreviewDetails('invalid')">Show Invalid (${invalidList.length})</button>
+                    </div>
+                    <div id="importPreviewDetails" style="margin-top:12px; max-height:240px; overflow:auto; background:#151515; padding:8px; border-radius:6px;"></div>
+                `;
+            } else if (type === 'projects') {
+                items.forEach((proj, idx) => {
+                    const v = validateProjectSchema(proj);
+                    if (!v.valid) { invalidList.push({ idx, proj, errors: v.errors }); return; }
+                    const exists = appData.projects.find(p => (proj.id && p.id === proj.id) || (p.name && p.name.toLowerCase() === (proj.name||'').toLowerCase()));
+                    if (exists) dupList.push({ idx, proj });
+                    else newList.push({ idx, proj });
+                    validList.push({ idx, proj });
+                });
+
+                _pendingImport.details = { duplicates: dupList, invalid: invalidList, newItems: newList, valid: validList };
+
+                body.innerHTML = `
+                    <p>Total entries in file: <strong>${items.length}</strong></p>
+                    <p>Valid: <strong>${validList.length}</strong></p>
+                    <p>Potential new (if merged): <strong>${newList.length}</strong></p>
+                    <p>Duplicates (will be skipped if merging): <strong>${dupList.length}</strong></p>
+                    <p>Invalid entries: <strong>${invalidList.length}</strong></p>
+                    <p style="font-size:12px;color:#999;">Choose "Merge" to keep existing projects and add only new ones. Choose "Replace" to overwrite your current projects with only the valid entries from this file.</p>
+                    <div style="margin-top:12px; display:flex; gap:8px;">
+                        <button class="btn btn-secondary btn-small" onclick="togglePreviewDetails('newItems')">Show New Projects (${newList.length})</button>
+                        <button class="btn btn-secondary btn-small" onclick="togglePreviewDetails('duplicates')">Show Duplicate Projects (${dupList.length})</button>
+                        <button class="btn btn-secondary btn-small" onclick="togglePreviewDetails('invalid')">Show Invalid (${invalidList.length})</button>
+                    </div>
+                    <div id="importPreviewDetails" style="margin-top:12px; max-height:240px; overflow:auto; background:#151515; padding:8px; border-radius:6px;"></div>
+                `;
+            }
+
+            openModal('importPreviewModal');
+        }
+
+        function togglePreviewDetails(section) {
+            const detailsEl = document.getElementById('importPreviewDetails');
+            if (!detailsEl) return;
+            const details = _pendingImport.details?.[section] || [];
+            if (!details || details.length === 0) {
+                detailsEl.innerHTML = '<div style="color:#999;">No items</div>';
+                return;
+            }
+            detailsEl.innerHTML = details.map(it => {
+                const idx = it.idx;
+                const obj = it.mat || it.proj || it;
+                const name = obj.name || obj.url || 'Item';
+                if (section === 'invalid') {
+                    return `<div style="padding:8px;border-bottom:1px solid #222;"><strong>#${idx}</strong> ${escapeHtml(name)}<div style="color:#f88; font-size:12px;">${escapeHtml((it.errors||[]).join('; '))}</div></div>`;
+                }
+                return `<div style="padding:8px;border-bottom:1px solid #222;"><strong>#${idx}</strong> ${escapeHtml(name)}</div>`;
+            }).join('');
+        }
+
+        function finalizeImport(mode) {
+            if (!_pendingImport || !_pendingImport.type || !_pendingImport.items) {
+                closeModal('importPreviewModal');
+                return;
+            }
+
+            // take snapshot for undo
+            _lastImportSnapshot = JSON.parse(JSON.stringify(appData));
+
+            if (_pendingImport.type === 'materials') {
+                const materials = _pendingImport.items;
+                if (mode === 'replace') {
+                    const normalized = [];
+                    materials.forEach(mat => {
+                        const v = validateMaterialSchema(mat);
+                        if (!v.valid) return;
+                        normalized.push({
+                            id: 'mat_' + Date.now() + '_' + Math.random().toString(36).slice(2,8),
+                            name: mat.name,
+                            description: mat.description || '',
+                            url: mat.url,
+                            pricePer: parseFloat(mat.pricePer) || 0,
+                            packSize: parseInt(mat.packSize) || 1,
+                            vendor: mat.vendor,
+                            currency: mat.currency || 'USD'
+                        });
+                    });
+                    if (normalized.length === 0) { showImportResult({success:false, message:'No valid materials to import'}); return; }
+                    appData.materials = normalized;
+                    saveData(); renderMaterials();
+                    showImportResult({success:true, message:`Imported and replaced ${normalized.length} materials`, replacedCount: normalized.length});
+                } else {
+                    let imported = 0, duplicates = 0;
+                    materials.forEach(mat => {
+                        const v = validateMaterialSchema(mat);
+                        if (!v.valid) return;
+                        const exists = appData.materials.find(m => (mat.id && m.id === mat.id) || ((m.name && m.name.toLowerCase() === (mat.name||'').toLowerCase()) && m.vendor === mat.vendor && m.url === mat.url));
+                        if (exists) { duplicates++; return; }
+                        const safeMat = {
+                            id: 'mat_' + Date.now() + '_' + Math.random().toString(36).slice(2,8),
+                            name: mat.name,
+                            description: mat.description || '',
+                            url: mat.url,
+                            pricePer: parseFloat(mat.pricePer) || 0,
+                            packSize: parseInt(mat.packSize) || 1,
+                            vendor: mat.vendor,
+                            currency: mat.currency || 'USD'
+                        };
+                        appData.materials.push(safeMat); imported++;
+                    });
+                    saveData(); renderMaterials();
+                    showImportResult({success:true, message:`Imported: ${imported}. Skipped duplicates: ${duplicates}.`, importedCount: imported, skipped: duplicates});
+                }
+            } else if (_pendingImport.type === 'projects') {
+                const projects = _pendingImport.items;
+                if (mode === 'replace') {
+                    const normalizedImported = [];
+                    projects.forEach(proj => {
+                        const v = validateProjectSchema(proj);
+                        if (!v.valid) return;
+                        const clone = JSON.parse(JSON.stringify(proj));
+                        const newProj = {
+                            id: 'proj_' + Date.now() + '_' + Math.random().toString(36).slice(2,8),
+                            name: clone.name,
+                            metadata: clone.metadata || {},
+                            boms: clone.boms || { amazon: [], aliexpress: [], temu: [] },
+                            shipping: clone.shipping || {},
+                            notes: Array.isArray(clone.notes) ? clone.notes : []
+                        };
+                        normalizedImported.push(newProj);
+                    });
+                    if (normalizedImported.length === 0) { showImportResult({success:false, message:'No valid projects to import'}); return; }
+                    appData.projects = normalizedImported; saveData(); renderProjects(); selectProject(appData.projects[0].id);
+                    showImportResult({success:true, message:`Imported and replaced ${normalizedImported.length} projects`, replacedCount: normalizedImported.length});
+                } else {
+                    let imported = 0, duplicates = 0;
+                    projects.forEach(proj => {
+                        const v = validateProjectSchema(proj);
+                        if (!v.valid) return;
+                        const incomingId = proj.id || null;
+                        const clone = JSON.parse(JSON.stringify(proj));
+                        const dup = appData.projects.find(p => (incomingId && p.id === incomingId) || (p.name && p.name.toLowerCase() === (clone.name||'').toLowerCase()));
+                        if (dup) { duplicates++; return; }
+                        const newProj = {
+                            id: 'proj_' + Date.now() + '_' + Math.random().toString(36).slice(2,8),
+                            name: clone.name,
+                            metadata: clone.metadata || {},
+                            boms: clone.boms || { amazon: [], aliexpress: [], temu: [] },
+                            shipping: clone.shipping || {},
+                            notes: Array.isArray(clone.notes) ? clone.notes : []
+                        };
+                        appData.projects.push(newProj); imported++;
+                    });
+                    saveData(); renderProjects(); if (imported > 0) selectProject(appData.projects[appData.projects.length-1].id);
+                    showImportResult({success:true, message:`Imported: ${imported}. Skipped duplicates: ${duplicates}.`, importedCount: imported, skipped: duplicates});
+                }
+            }
+
+            _pendingImport = { type: null, items: null, details: null };
+            // keep modal open and show results with Undo option
+        }
+
+        function showImportResult(result) {
+            const body = document.getElementById('importPreviewBody');
+            if (!body) return;
+            body.innerHTML = `
+                <div style="padding:12px;">
+                    <div style="font-weight:600; margin-bottom:8px;">${escapeHtml(result.message)}</div>
+                    <div style="display:flex; gap:8px; margin-top:10px;">
+                        <button class="btn btn-secondary" onclick="undoLastImport()">Undo</button>
+                        <button class="btn btn-secondary" onclick="closeModal('importPreviewModal')">Close</button>
+                    </div>
+                </div>
+            `;
+        }
+
+        function undoLastImport() {
+            if (!_lastImportSnapshot) {
+                alert('Nothing to undo');
+                return;
+            }
+            appData = _lastImportSnapshot;
+            _lastImportSnapshot = null;
+            saveData();
+            renderMaterials();
+            renderProjects();
+            showImportResult({success:true, message:'Undo completed — previous data restored.'});
         }
 
         // Initialize on load
