@@ -1,0 +1,74 @@
+[
+  {
+    "name": "M3x12 Socket Head Screw",
+    "description": "",
+    "url": "https://www.amazon.com/gp/product/B0D1XJ766V/ref=ox_sc_act_title_8?smid=AU4U01987UNZX&th=1https://www.amazon.com/gp/product/B0D1XJ766V/ref=ox_sc_act_title_8?smid=AU4U01987UNZX&th=1",
+    "pricePer": 9,
+    "packSize": 1,
+    "vendor": "amazon",
+    "id": "mat_1760843619164"
+  },
+  {
+    "name": "M3x25 Socket Head Screw",
+    "description": "Same pack as M3x12 Socket Head Screw",
+    "url": "https://www.amazon.com/gp/product/B0D1XJ766V/ref=ox_sc_act_title_8?smid=AU4U01987UNZX&th=1",
+    "pricePer": 9,
+    "packSize": 1,
+    "vendor": "amazon",
+    "id": "mat_1760843690445"
+  },
+  {
+    "name": "M5x25 Hex Head Screw",
+    "description": "",
+    "url": "https://www.amazon.com/gp/product/B0FD3T1X54/ref=ox_sc_act_title_9?smid=A8T05GIBR72NG&th=1",
+    "pricePer": 9,
+    "packSize": 1,
+    "vendor": "amazon",
+    "id": "mat_1760843749540"
+  },
+  {
+    "name": "M3 Washers",
+    "description": "",
+    "url": "https://www.amazon.com/gp/product/B0CBJZNDN4/ref=ox_sc_act_title_7?smid=A29KWAPFVM964L&psc=1",
+    "pricePer": 7,
+    "packSize": 1,
+    "vendor": "amazon",
+    "id": "mat_1760843789604"
+  },
+  {
+    "name": "M3-05 Hex Nut",
+    "description": "",
+    "url": "https://www.amazon.com/gp/product/B0F9FC4563/ref=ox_sc_act_title_6?smid=A3SSR6IRE5S2JM&th=1",
+    "pricePer": 6,
+    "packSize": 1,
+    "vendor": "amazon",
+    "id": "mat_1760843869544"
+  },
+  {
+    "name": "53-08 Hex Nut",
+    "description": "",
+    "url": "https://www.amazon.com/gp/product/B0DWL1WWYK/ref=ox_sc_act_title_5?smid=A3SUP94XHNC0WE&psc=1",
+    "pricePer": 6,
+    "packSize": 1,
+    "vendor": "amazon",
+    "id": "mat_1760843903282"
+  },
+  {
+    "name": "GT2 Belt | 6mm wide, 5m long",
+    "description": "6mm wide, 5m long",
+    "url": "https://a.co/d/4b3waka",
+    "pricePer": 12,
+    "packSize": 1,
+    "vendor": "amazon",
+    "id": "mat_1760843982936"
+  },
+  {
+    "name": "GT2 Toothless Idler | 3mm bore 20 tooth diameter",
+    "description": "",
+    "url": "https://a.co/d/0mxM7yb",
+    "pricePer": 9,
+    "packSize": 1,
+    "vendor": "amazon",
+    "id": "mat_1760844014851"
+  }
+]

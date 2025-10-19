@@ -1,0 +1,2002 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BOMPlanner - 3D Printing Project Tracker</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background-color: #121212;
+            color: #E0E0E0;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .sidebar {
+            width: 280px;
+            background-color: #1E1E1E;
+            border-right: 1px solid #333;
+            display: flex;
+            flex-direction: column;
+            transition: transform 0.3s ease;
+        }
+
+        .sidebar-header {
+            padding: 20px;
+            background-color: #FF0000;
+            color: white;
+            font-size: 24px;
+            font-weight: bold;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .menu-toggle {
+            display: none;
+            background: none;
+            border: none;
+            color: white;
+            font-size: 24px;
+            cursor: pointer;
+        }
+
+        .sidebar-tabs {
+            display: flex;
+            background-color: #252525;
+        }
+
+        .sidebar-tab {
+            flex: 1;
+            padding: 12px;
+            background: none;
+            border: none;
+            color: #999;
+            cursor: pointer;
+            font-size: 14px;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+        }
+
+        .sidebar-tab.active {
+            color: #FF0000;
+            border-bottom-color: #FF0000;
+        }
+
+        .sidebar-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 15px;
+        }
+
+        .btn {
+            background-color: #FF0000;
+            color: white;
+            border: none;
+            padding: 10px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.2s;
+        }
+
+        .btn:hover {
+            background-color: #CC0000;
+        }
+
+        .btn-secondary {
+            background-color: #333;
+            color: #E0E0E0;
+        }
+
+        .btn-secondary:hover {
+            background-color: #444;
+        }
+
+        .btn-small {
+            padding: 6px 10px;
+            font-size: 12px;
+        }
+
+        .project-item, .material-item {
+            padding: 12px;
+            background-color: #252525;
+            border-radius: 4px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            border-left: 3px solid transparent;
+        }
+
+        .project-item:hover, .material-item:hover {
+            background-color: #2A2A2A;
+        }
+
+        .project-item.active {
+            border-left-color: #FF0000;
+            background-color: #2A2A2A;
+        }
+
+        .project-name {
+            font-weight: 500;
+            margin-bottom: 4px;
+        }
+
+        .project-meta {
+            font-size: 12px;
+            color: #999;
+        }
+
+        .main-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 30px;
+        }
+
+        .content-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 25px;
+        }
+
+        .content-title {
+            font-size: 28px;
+            font-weight: bold;
+        }
+
+        .section {
+            background-color: #1E1E1E;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 25px;
+        }
+
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #333;
+        }
+
+        .section-title {
+            font-size: 20px;
+            font-weight: 600;
+            color: #FF0000;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-label {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 14px;
+            color: #BBB;
+        }
+
+        .form-input, .form-select, .form-textarea {
+            width: 100%;
+            padding: 10px;
+            background-color: #252525;
+            border: 1px solid #333;
+            border-radius: 4px;
+            color: #E0E0E0;
+            font-size: 14px;
+        }
+
+        .form-input:focus, .form-select:focus, .form-textarea:focus {
+            outline: none;
+            border-color: #FF0000;
+        }
+
+        .form-textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #333;
+        }
+
+        th {
+            background-color: #252525;
+            font-weight: 600;
+            color: #FF0000;
+        }
+
+        .note-item {
+            background-color: #252525;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 10px;
+            position: relative;
+        }
+
+        .note-content {
+            margin-bottom: 8px;
+            word-wrap: break-word;
+        }
+
+        .note-content a {
+            color: #FF0000;
+            text-decoration: none;
+        }
+
+        .note-content a:hover {
+            text-decoration: underline;
+        }
+
+        .note-timestamp {
+            font-size: 11px;
+            color: #666;
+        }
+
+        .note-actions {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            display: flex;
+            gap: 5px;
+        }
+
+        .icon-btn {
+            background: none;
+            border: none;
+            color: #999;
+            cursor: pointer;
+            font-size: 16px;
+            padding: 4px;
+            transition: color 0.2s;
+        }
+
+        .icon-btn:hover {
+            color: #FF0000;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.8);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background-color: #1E1E1E;
+            border-radius: 8px;
+            padding: 30px;
+            max-width: 600px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            font-size: 22px;
+            font-weight: bold;
+            margin-bottom: 20px;
+            color: #FF0000;
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            margin-top: 20px;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+
+        .cost-summary {
+            background-color: #252525;
+            padding: 15px;
+            border-radius: 4px;
+            margin-top: 15px;
+        }
+
+        .cost-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
+
+        .cost-total {
+            font-size: 18px;
+            font-weight: bold;
+            color: #FF0000;
+            padding-top: 8px;
+            border-top: 1px solid #333;
+        }
+
+        .hamburger-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 998;
+        }
+
+        @media (max-width: 768px) {
+            .sidebar {
+                position: fixed;
+                left: 0;
+                top: 0;
+                height: 100%;
+                z-index: 999;
+                transform: translateX(-100%);
+            }
+
+            .sidebar.open {
+                transform: translateX(0);
+            }
+
+            .menu-toggle {
+                display: block;
+            }
+
+            .hamburger-overlay.active {
+                display: block;
+            }
+
+            .main-content {
+                padding: 15px;
+            }
+
+            .form-row {
+                grid-template-columns: 1fr;
+            }
+
+            table {
+                font-size: 12px;
+            }
+
+            th, td {
+                padding: 8px 4px;
+            }
+        }
+
+        .tag {
+            display: inline-block;
+            background-color: #333;
+            color: #E0E0E0;
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-size: 11px;
+            margin-right: 4px;
+            margin-top: 4px;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 3px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .status-ordered {
+            background-color: #FF6B00;
+            color: white;
+        }
+
+        .status-received {
+            background-color: #00AA00;
+            color: white;
+        }
+
+        .status-pending {
+            background-color: #666;
+            color: white;
+        }
+
+        .inline-edit {
+            background-color: #1A1A1A;
+            border: 1px solid #FF0000;
+        }
+
+        /* Tag/link chip specific */
+        .chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 8px;
+            border-radius: 16px;
+            background: #202020;
+            color: #E0E0E0;
+            font-size: 12px;
+            margin-right: 6px;
+            margin-top: 6px;
+        }
+        .chip .remove-chip {
+            background: none;
+            border: none;
+            color: #999;
+            cursor: pointer;
+            font-size: 12px;
+            padding: 0 4px;
+        }
+        .chip .remove-chip:hover { color: #FF0000; }
+    /* Material lookup dropdown for BOM modal */
+    .lookup-wrapper { position: relative; }
+    .lookup-input { width: 100%; padding: 10px; background-color: #252525; border: 1px solid #333; border-radius: 4px; color: #E0E0E0; }
+    .lookup-dropdown { position: absolute; z-index: 1200; left: 0; right: 0; background: #171717; border: 1px solid #333; max-height: 240px; overflow-y: auto; border-radius: 4px; margin-top: 6px; }
+    .lookup-item { padding: 8px 10px; cursor: pointer; display:flex; justify-content:space-between; gap:8px; align-items:center; }
+    .lookup-item:hover { background: #222; }
+    .lookup-meta { font-size: 12px; color: #999; }
+    </style>
+</head>
+<body>
+    <div class="hamburger-overlay" id="hamburgerOverlay"></div>
+    
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <span>BOMPlanner</span>
+            <button class="menu-toggle" id="menuToggle">✕</button>
+        </div>
+        
+        <div class="sidebar-tabs">
+            <button class="sidebar-tab active" data-tab="projects">Projects</button>
+            <button class="sidebar-tab" data-tab="materials">Materials</button>
+        </div>
+        
+        <div class="sidebar-content">
+            <div id="projectsTab" class="tab-content">
+                <button class="btn" style="width: 100%; margin-bottom: 10px;" onclick="showNewProjectModal()">+ New Project</button>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px;">
+                    <button class="btn btn-secondary btn-small" onclick="importProject()">Import</button>
+                    <button class="btn btn-secondary btn-small" onclick="exportAllProjects()">Export All</button>
+                </div>
+                <div class="form-group" style="margin-bottom: 15px;">
+                    <label class="form-label" style="font-size: 12px;">Sort By:</label>
+                    <select class="form-select" id="projectSortBy" onchange="renderProjects()" style="font-size: 13px;">
+                        <option value="date-desc">Date (Newest First)</option>
+                        <option value="date-asc">Date (Oldest First)</option>
+                        <option value="name-asc">Name (A-Z)</option>
+                        <option value="name-desc">Name (Z-A)</option>
+                    </select>
+                </div>
+                <div id="projectsList"></div>
+            </div>
+            
+            <div id="materialsTab" class="tab-content" style="display: none;">
+                <button class="btn" style="width: 100%; margin-bottom: 10px;" onclick="showNewMaterialModal()">+ Add Material</button>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px;">
+                    <button class="btn btn-secondary btn-small" onclick="importMaterials()">� Import</button>
+                    <button class="btn btn-secondary btn-small" onclick="exportMaterials()">� Export</button>
+                </div>
+                <input type="text" class="form-input" id="materialSearch" placeholder="🔍 Search materials..." style="margin-bottom: 10px;" oninput="filterMaterials()">
+                <select class="form-select" id="materialVendorFilter" style="margin-bottom: 15px;" onchange="filterMaterials()">
+                    <option value="">All Vendors</option>
+                    <option value="amazon">Amazon</option>
+                    <option value="aliexpress">AliExpress</option>
+                    <option value="temu">Temu</option>
+                </select>
+                <div id="materialsList"></div>
+            </div>
+        </div>
+    </aside>
+
+    <main class="main-content" id="mainContent">
+        <button class="menu-toggle" id="mobileMenuToggle" style="position: absolute; top: 20px; left: 20px;">☰</button>
+        
+        <div class="empty-state" id="emptyState">
+            <h2>Welcome to BOMPlanner</h2>
+            <p>Create a new project to get started with tracking your 3D printing BOMs</p>
+        </div>
+        
+        <div id="projectView" style="display: none;">
+            <div class="content-header">
+                <h1 class="content-title" id="projectTitle"></h1>
+                <div>
+                    <button class="btn btn-secondary btn-small" onclick="editProjectMetadata()">Edit</button>
+                    <button class="btn btn-secondary btn-small" onclick="exportProject()">Export</button>
+                    <button class="btn btn-secondary btn-small" onclick="deleteProject()">Delete</button>
+                </div>
+            </div>
+            
+            <div id="projectMeta" style="margin-bottom: 20px; color: #999;"></div>
+            
+            <div class="section">
+                <div class="section-header">
+                    <h2 class="section-title">Amazon BOM</h2>
+                    <div style="display:flex; gap:12px; align-items:center;">
+                        <div style="font-weight:600;">Total: $<span id="amazonTotal">0.00</span></div>
+                        <div id="amazonTotalActions" style="display:flex; gap:8px; align-items:center;">
+                            <button class="btn btn-small" id="amazonShippingToggleBtn" onclick="toggleShippingEditor('amazon')">Add/Edit Shipping</button>
+                            <button class="btn btn-small" id="amazonToggle" onclick="toggleVendor('amazon')">Collapse</button>
+                            <button class="btn btn-small" onclick="showAddBOMItemModal('amazon')">+ Add Item</button>
+                        </div>
+                        <div id="amazonShippingEditor" style="display:none; margin-left:8px;">
+                            <input type="number" class="form-input" id="amazonShippingInline" placeholder="0.00" step="0.01" style="width:120px; display:inline-block;">
+                            <button class="btn btn-secondary btn-small" onclick="saveShipping('amazon')">Save</button>
+                            <button class="btn btn-secondary btn-small" onclick="cancelShipping('amazon')">Cancel</button>
+                            <div style="font-size:11px; color:#999;">Optional</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="vendor-body" id="amazonBody">
+                    <div id="amazonBOM"></div>
+                </div>
+            </div>
+            
+            <div class="section">
+                <div class="section-header">
+                    <h2 class="section-title">AliExpress BOM</h2>
+                    <div style="display:flex; gap:12px; align-items:center;">
+                        <div style="font-weight:600;">Total: $<span id="aliexpressTotal">0.00</span></div>
+                        <div id="aliexpressTotalActions" style="display:flex; gap:8px; align-items:center;">
+                            <button class="btn btn-small" id="aliexpressShippingToggleBtn" onclick="toggleShippingEditor('aliexpress')">Add/Edit Shipping</button>
+                            <button class="btn btn-small" id="aliexpressToggle" onclick="toggleVendor('aliexpress')">Collapse</button>
+                            <button class="btn btn-small" onclick="showAddBOMItemModal('aliexpress')">+ Add Item</button>
+                        </div>
+                        <div id="aliexpressShippingEditor" style="display:none; margin-left:8px;">
+                            <input type="number" class="form-input" id="aliexpressShippingInline" placeholder="0.00" step="0.01" style="width:120px; display:inline-block;">
+                            <button class="btn btn-secondary btn-small" onclick="saveShipping('aliexpress')">Save</button>
+                            <button class="btn btn-secondary btn-small" onclick="cancelShipping('aliexpress')">Cancel</button>
+                            <div style="font-size:11px; color:#999;">Optional</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="vendor-body" id="aliexpressBody">
+                    <div id="aliexpressBOM"></div>
+                </div>
+            </div>
+            
+            <div class="section">
+                <div class="section-header">
+                    <h2 class="section-title">Temu BOM</h2>
+                    <div style="display:flex; gap:12px; align-items:center;">
+                        <div style="font-weight:600;">Total: $<span id="temuTotal">0.00</span></div>
+                        <div id="temuTotalActions" style="display:flex; gap:8px; align-items:center;">
+                            <button class="btn btn-small" id="temuShippingToggleBtn" onclick="toggleShippingEditor('temu')">Add/Edit Shipping</button>
+                            <button class="btn btn-small" id="temuToggle" onclick="toggleVendor('temu')">Collapse</button>
+                            <button class="btn btn-small" onclick="showAddBOMItemModal('temu')">+ Add Item</button>
+                        </div>
+                        <div id="temuShippingEditor" style="display:none; margin-left:8px;">
+                            <input type="number" class="form-input" id="temuShippingInline" placeholder="0.00" step="0.01" style="width:120px; display:inline-block;">
+                            <button class="btn btn-secondary btn-small" onclick="saveShipping('temu')">Save</button>
+                            <button class="btn btn-secondary btn-small" onclick="cancelShipping('temu')">Cancel</button>
+                            <div style="font-size:11px; color:#999;">Optional</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="vendor-body" id="temuBody">
+                    <div id="temuBOM"></div>
+                </div>
+            </div>
+            
+            <div class="section">
+                <div class="section-header">
+                    <h2 class="section-title">Notes</h2>
+                    <button class="btn btn-small" onclick="showAddNoteModal()">+ Add Note</button>
+                </div>
+                <div id="notesList"></div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Modals -->
+    <div class="modal" id="projectModal">
+        <div class="modal-content">
+            <div class="modal-header">New Project</div>
+            <div class="form-group">
+                <label class="form-label">Project Name *</label>
+                <input type="text" class="form-input" id="projectName" required>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Description</label>
+                <textarea class="form-textarea" id="projectDescription"></textarea>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Tags (press Enter or comma to add)</label>
+                <div id="projectTagsContainer" style="min-height: 40px;"></div>
+                <input type="text" class="form-input" id="projectTagInput" placeholder="Type a tag and press Enter or comma" style="margin-top:8px;">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Metadata Links (add single URL)</label>
+                <div id="projectLinksContainer" style="min-height: 40px;"></div>
+                <div style="display:flex; gap:8px; margin-top:8px;">
+                    <input type="url" class="form-input" id="projectLinkInput" placeholder="https://example.com">
+                    <button class="btn btn-secondary btn-small" type="button" onclick="addProjectLinkFromInput()">Add</button>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="closeModal('projectModal')">Cancel</button>
+                <button class="btn" onclick="saveProject()">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="materialModal">
+        <div class="modal-content">
+            <div class="modal-header">Add Material</div>
+            <div class="form-group">
+                <label class="form-label">Item Name *</label>
+                <input type="text" class="form-input" id="materialName" required>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Description</label>
+                <input type="text" class="form-input" id="materialDescription">
+            </div>
+            <div class="form-group">
+                <label class="form-label">URL *</label>
+                <input type="url" class="form-input" id="materialUrl" required>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Price Per Unit/Pack *</label>
+                    <input type="number" class="form-input" id="materialPrice" step="0.01" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Pack Size (Optional)</label>
+                    <input type="number" class="form-input" id="materialPackSize" placeholder="1">
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Vendor *</label>
+                <select class="form-select" id="materialVendor" required>
+                    <option value="amazon">Amazon</option>
+                    <option value="aliexpress">AliExpress</option>
+                    <option value="temu">Temu</option>
+                </select>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="closeModal('materialModal')">Cancel</button>
+                <button class="btn" onclick="saveMaterial()">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="bomItemModal">
+        <div class="modal-content">
+            <div class="modal-header">Add BOM Item</div>
+            <div class="form-group">
+                <label class="form-label">Select from Materials or Add Manually</label>
+                <div class="lookup-wrapper">
+                    <input id="bomMaterialLookup" class="lookup-input" placeholder="Search materials by name or vendor..." autocomplete="off">
+                    <div id="bomMaterialDropdown" class="lookup-dropdown" style="display:none;"></div>
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Item Name *</label>
+                <input type="text" class="form-input" id="bomItemName" required>
+            </div>
+            <div class="form-group">
+                <label class="form-label">URL</label>
+                <input type="url" class="form-input" id="bomItemUrl">
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Quantity Needed *</label>
+                    <input type="number" class="form-input" id="bomQuantity" value="1" min="1" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Price Per Unit/Pack *</label>
+                    <input type="number" class="form-input" id="bomPrice" step="0.01" required>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Pack Size</label>
+                    <input type="number" class="form-input" id="bomPackSize" value="1" min="1">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">On-Hand Quantity</label>
+                    <input type="number" class="form-input" id="bomOnHand" value="0" min="0">
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Status</label>
+                <select class="form-select" id="bomStatus">
+                    <option value="pending">Pending</option>
+                    <option value="ordered">Ordered</option>
+                    <option value="received">Received</option>
+                </select>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="closeModal('bomItemModal')">Cancel</button>
+                <button class="btn" onclick="saveBOMItem()">Add</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="noteModal">
+        <div class="modal-content">
+            <div class="modal-header">Add Note</div>
+            <div class="form-group">
+                <label class="form-label">Note Content</label>
+                <textarea class="form-textarea" id="noteContent" placeholder="Enter your note. URLs will automatically become links."></textarea>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="closeModal('noteModal')">Cancel</button>
+                <button class="btn" onclick="saveNote()">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let appData = {
+            materials: [],
+            projects: [],
+            currentProjectId: null
+        };
+
+        let currentBOMVendor = null;
+        let editingMaterialId = null;
+        let editingProjectId = null;
+        let editingNoteIndex = null;
+        // temp arrays for modal editing UI
+        let tempProjectTags = [];
+        let tempProjectLinks = [];
+
+        // Initialize app
+        function init() {
+            loadData();
+            setupEventListeners();
+            renderProjects();
+            renderMaterials();
+            
+            if (appData.projects.length > 0) {
+                selectProject(appData.projects[0].id);
+            }
+            // Ensure vendor sections are expanded by default
+            ['amazon','aliexpress','temu'].forEach(v => {
+                const body = document.getElementById(v + 'Body');
+                const btn = document.getElementById(v + 'Toggle');
+                if (body) body.style.display = 'block';
+                if (btn) btn.textContent = 'Collapse';
+            });
+        }
+
+        function toggleVendor(vendor) {
+            const body = document.getElementById(vendor + 'Body');
+            const btn = document.getElementById(vendor + 'Toggle');
+            if (!body || !btn) return;
+            if (body.style.display === 'none') {
+                body.style.display = 'block';
+                btn.textContent = 'Collapse';
+            } else {
+                body.style.display = 'none';
+                btn.textContent = 'Expand';
+            }
+        }
+
+        function toggleShippingEditor(vendor) {
+            const editor = document.getElementById(vendor + 'ShippingEditor');
+            if (!editor) return;
+            editor.style.display = editor.style.display === 'none' ? 'block' : 'none';
+        }
+
+        function saveShipping(vendor) {
+            const project = appData.projects.find(p => p.id === appData.currentProjectId);
+            if (!project) return;
+            const input = document.getElementById(vendor + 'ShippingInline');
+            const value = parseFloat(input.value) || 0;
+            if (!project.shipping) project.shipping = {};
+            project.shipping[vendor] = value;
+            saveData();
+            renderBOM(vendor, project.boms[vendor]);
+            // hide editor
+            const editor = document.getElementById(vendor + 'ShippingEditor');
+            if (editor) editor.style.display = 'none';
+        }
+
+        function cancelShipping(vendor) {
+            const project = appData.projects.find(p => p.id === appData.currentProjectId);
+            if (!project) return;
+            const input = document.getElementById(vendor + 'ShippingInline');
+            input.value = project.shipping?.[vendor] || '';
+            const editor = document.getElementById(vendor + 'ShippingEditor');
+            if (editor) editor.style.display = 'none';
+        }
+
+        function setupEventListeners() {
+            document.querySelectorAll('.sidebar-tab').forEach(tab => {
+                tab.addEventListener('click', () => switchTab(tab.dataset.tab));
+            });
+            // Tag input keyboard handling (delegated after modal opens)
+            document.addEventListener('keydown', (e) => {
+                const tagInput = document.getElementById('projectTagInput');
+                if (!tagInput) return;
+                if (document.getElementById('projectModal').classList.contains('active') && document.activeElement === tagInput) {
+                    if (e.key === 'Enter' || e.key === ',') {
+                        e.preventDefault();
+                        addProjectTagFromInput();
+                    }
+                }
+            });
+
+            document.getElementById('mobileMenuToggle').addEventListener('click', toggleSidebar);
+            document.getElementById('menuToggle').addEventListener('click', toggleSidebar);
+            document.getElementById('hamburgerOverlay').addEventListener('click', toggleSidebar);
+
+            // Import project file input
+            const importInput = document.createElement('input');
+            importInput.type = 'file';
+            importInput.accept = '.json';
+            importInput.style.display = 'none';
+            importInput.id = 'importFile';
+            importInput.addEventListener('change', handleImport);
+            document.body.appendChild(importInput);
+
+            // Import materials file input
+            const importMaterialsInput = document.createElement('input');
+            importMaterialsInput.type = 'file';
+            importMaterialsInput.accept = '.json';
+            importMaterialsInput.style.display = 'none';
+            importMaterialsInput.id = 'importMaterialsFile';
+            importMaterialsInput.addEventListener('change', handleMaterialsImport);
+            document.body.appendChild(importMaterialsInput);
+        }
+
+        function switchTab(tabName) {
+            document.querySelectorAll('.sidebar-tab').forEach(t => t.classList.remove('active'));
+            document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
+            
+            document.getElementById('projectsTab').style.display = tabName === 'projects' ? 'block' : 'none';
+            document.getElementById('materialsTab').style.display = tabName === 'materials' ? 'block' : 'none';
+        }
+
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('hamburgerOverlay');
+            sidebar.classList.toggle('open');
+            overlay.classList.toggle('active');
+        }
+
+        // Data persistence
+        function saveData() {
+            try {
+                localStorage.setItem('bomPlannerData', JSON.stringify(appData));
+            } catch (e) {
+                console.error('Failed to save data', e);
+            }
+        }
+
+        function loadData() {
+            try {
+                const saved = localStorage.getItem('bomPlannerData');
+                if (saved) {
+                    appData = JSON.parse(saved);
+                }
+            } catch (e) {
+                console.error('Failed to load data', e);
+            }
+        }
+
+        // Project management
+        function renderProjects() {
+            const list = document.getElementById('projectsList');
+            if (appData.projects.length === 0) {
+                list.innerHTML = '<div style="color: #666; text-align: center; padding: 20px;">No projects yet</div>';
+                return;
+            }
+
+            // Get sort preference
+            const sortBy = document.getElementById('projectSortBy')?.value || 'date-desc';
+            
+            // Create sorted copy of projects
+            const sortedProjects = [...appData.projects].sort((a, b) => {
+                switch(sortBy) {
+                    case 'date-desc':
+                        return (b.metadata.creationDate || '').localeCompare(a.metadata.creationDate || '');
+                    case 'date-asc':
+                        return (a.metadata.creationDate || '').localeCompare(b.metadata.creationDate || '');
+                    case 'name-asc':
+                        return a.name.toLowerCase().localeCompare(b.name.toLowerCase());
+                    case 'name-desc':
+                        return b.name.toLowerCase().localeCompare(a.name.toLowerCase());
+                    default:
+                        return 0;
+                }
+            });
+
+            list.innerHTML = sortedProjects.map(p => `
+                <div class="project-item ${p.id === appData.currentProjectId ? 'active' : ''}" onclick="selectProject('${p.id}')">
+                    <div class="project-name">${escapeHtml(p.name)}</div>
+                    <div class="project-meta">
+                        ${p.metadata.creationDate || 'No date'}
+                        ${p.metadata.tags ? p.metadata.tags.map(t => `<span class="tag">${escapeHtml(t)}</span>`).join('') : ''}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function selectProject(id) {
+            appData.currentProjectId = id;
+            const project = appData.projects.find(p => p.id === id);
+            
+            if (!project) return;
+
+            document.getElementById('emptyState').style.display = 'none';
+            document.getElementById('projectView').style.display = 'block';
+            document.getElementById('projectTitle').textContent = project.name;
+            
+            const metaHtml = [];
+            if (project.metadata.description) {
+                metaHtml.push(`<p>${escapeHtml(project.metadata.description)}</p>`);
+            }
+            if (project.metadata.tags && project.metadata.tags.length) {
+                metaHtml.push(project.metadata.tags.map(t => `<span class="tag">${escapeHtml(t)}</span>`).join(''));
+            }
+            if (project.metadata.links && project.metadata.links.length) {
+                metaHtml.push('<div style="margin-top:8px;">' + project.metadata.links.map(l => `<a href="${escapeHtml(l)}" target="_blank" style="display:inline-block; color:#FF0000; margin-right:8px;">${escapeHtml(l)}</a>`).join('') + '</div>');
+            }
+            document.getElementById('projectMeta').innerHTML = metaHtml.join('');
+
+            // Load shipping costs into inline editors
+            document.getElementById('amazonShippingInline').value = project.shipping?.amazon || '';
+            document.getElementById('aliexpressShippingInline').value = project.shipping?.aliexpress || '';
+            document.getElementById('temuShippingInline').value = project.shipping?.temu || '';
+
+            renderBOMs();
+            renderNotes();
+            renderProjects();
+            
+            if (window.innerWidth <= 768) {
+                toggleSidebar();
+            }
+        }
+
+        function showNewProjectModal() {
+            editingProjectId = null;
+            document.getElementById('projectName').value = '';
+            document.getElementById('projectDescription').value = '';
+            // reset temp arrays & UI
+            tempProjectTags = [];
+            tempProjectLinks = [];
+            renderProjectTagsUI();
+            renderProjectLinksUI();
+            document.getElementById('projectTagInput').value = '';
+            document.getElementById('projectLinkInput').value = '';
+            document.querySelector('#projectModal .modal-header').textContent = 'New Project';
+            openModal('projectModal');
+        }
+
+        function editProjectMetadata() {
+            const project = appData.projects.find(p => p.id === appData.currentProjectId);
+            if (!project) return;
+
+            editingProjectId = project.id;
+            document.getElementById('projectName').value = project.name;
+            document.getElementById('projectDescription').value = project.metadata.description || '';
+            // populate temp arrays from project for modal UI
+            tempProjectTags = Array.isArray(project.metadata.tags) ? [...project.metadata.tags] : [];
+            tempProjectLinks = Array.isArray(project.metadata.links) ? [...project.metadata.links] : [];
+            renderProjectTagsUI();
+            renderProjectLinksUI();
+            document.getElementById('projectTagInput').value = '';
+            document.getElementById('projectLinkInput').value = '';
+            document.querySelector('#projectModal .modal-header').textContent = 'Edit Project';
+            openModal('projectModal');
+        }
+
+        function saveProject() {
+            const name = document.getElementById('projectName').value.trim();
+            if (!name) {
+                alert('Project name is required');
+                return;
+            }
+
+            const tags = tempProjectTags.slice();
+            const links = tempProjectLinks.slice();
+
+            if (editingProjectId) {
+                const project = appData.projects.find(p => p.id === editingProjectId);
+                project.name = name;
+                project.metadata.description = document.getElementById('projectDescription').value.trim();
+                project.metadata.tags = tags;
+                project.metadata.links = links;
+            } else {
+                const newProject = {
+                    id: 'proj_' + Date.now(),
+                    name: name,
+                    metadata: {
+                        description: document.getElementById('projectDescription').value.trim(),
+                        tags: tags,
+                        links: links,
+                        creationDate: new Date().toISOString().split('T')[0]
+                    },
+                    boms: {
+                        amazon: [],
+                        aliexpress: [],
+                        temu: []
+                    },
+                    shipping: {},
+                    notes: []
+                };
+                appData.projects.push(newProject);
+                selectProject(newProject.id);
+            }
+
+            saveData();
+            renderProjects();
+            if (editingProjectId) {
+                selectProject(editingProjectId);
+            }
+            closeModal('projectModal');
+        }
+
+        function deleteProject() {
+            if (!confirm('Are you sure you want to delete this project?')) return;
+
+            appData.projects = appData.projects.filter(p => p.id !== appData.currentProjectId);
+            appData.currentProjectId = null;
+            
+            saveData();
+            renderProjects();
+            
+            document.getElementById('projectView').style.display = 'none';
+            document.getElementById('emptyState').style.display = 'block';
+
+            if (appData.projects.length > 0) {
+                selectProject(appData.projects[0].id);
+            }
+        }
+
+        function exportProject() {
+            const project = appData.projects.find(p => p.id === appData.currentProjectId);
+            if (!project) return;
+
+            const data = JSON.stringify(project, null, 2);
+            const blob = new Blob([data], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${project.name.replace(/[^a-z0-9]/gi, '_')}_${Date.now()}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        function importProject() {
+            document.getElementById('importFile').click();
+        }
+
+        function handleImport(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                try {
+                    const parsed = JSON.parse(event.target.result);
+
+                    const projectsToImport = Array.isArray(parsed) ? parsed : [parsed];
+
+                    const importedIds = [];
+
+                    for (let i = 0; i < projectsToImport.length; i++) {
+                        const proj = projectsToImport[i];
+                        const result = validateProjectSchema(proj);
+                        if (!result.valid) {
+                            alert('Failed to import project at index ' + i + ': Invalid schema.\n' + result.errors.join('\n'));
+                            // skip invalid project but continue with others
+                            continue;
+                        }
+
+                        // normalize/ensure required fields
+                        const newProj = JSON.parse(JSON.stringify(proj)); // shallow clone
+                        newProj.id = 'proj_' + Date.now() + '_' + Math.random().toString(36).slice(2,8);
+                        newProj.metadata = newProj.metadata || {};
+                        newProj.metadata.creationDate = newProj.metadata.creationDate || new Date().toISOString().split('T')[0];
+                        newProj.metadata.description = newProj.metadata.description || '';
+                        newProj.metadata.tags = Array.isArray(newProj.metadata.tags) ? newProj.metadata.tags : [];
+                        newProj.metadata.links = Array.isArray(newProj.metadata.links) ? newProj.metadata.links : [];
+                        newProj.boms = newProj.boms || { amazon: [], aliexpress: [], temu: [] };
+                        newProj.boms.amazon = Array.isArray(newProj.boms.amazon) ? newProj.boms.amazon : [];
+                        newProj.boms.aliexpress = Array.isArray(newProj.boms.aliexpress) ? newProj.boms.aliexpress : [];
+                        newProj.boms.temu = Array.isArray(newProj.boms.temu) ? newProj.boms.temu : [];
+                        newProj.shipping = newProj.shipping || {};
+                        newProj.notes = Array.isArray(newProj.notes) ? newProj.notes : [];
+
+                        appData.projects.push(newProj);
+                        importedIds.push(newProj.id);
+                    }
+
+                    if (importedIds.length === 0) {
+                        alert('No valid projects found to import');
+                        return;
+                    }
+
+                    saveData();
+                    renderProjects();
+                    // select the first imported project
+                    selectProject(importedIds[0]);
+                } catch (err) {
+                    alert('Failed to import project: Invalid file format');
+                }
+            };
+            reader.readAsText(file);
+            e.target.value = '';
+        }
+        
+        function exportAllProjects() {
+            if (appData.projects.length === 0) {
+                alert('No projects to export');
+                return;
+            }
+
+            const data = JSON.stringify(appData.projects, null, 2);
+            const blob = new Blob([data], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `BOMPlanner_AllProjects_${Date.now()}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        // Materials management
+        function renderMaterials() {
+            const searchTerm = document.getElementById('materialSearch')?.value.toLowerCase() || '';
+            const vendorFilter = document.getElementById('materialVendorFilter')?.value || '';
+            
+            const filteredMaterials = appData.materials.filter(m => {
+                const matchesSearch = !searchTerm || 
+                    m.name.toLowerCase().includes(searchTerm) ||
+                    (m.description && m.description.toLowerCase().includes(searchTerm));
+                const matchesVendor = !vendorFilter || m.vendor === vendorFilter;
+                return matchesSearch && matchesVendor;
+            });
+
+            const list = document.getElementById('materialsList');
+            
+            if (appData.materials.length === 0) {
+                list.innerHTML = '<div style="color: #666; text-align: center; padding: 20px;">No materials yet</div>';
+                return;
+            }
+
+            if (filteredMaterials.length === 0) {
+                list.innerHTML = '<div style="color: #666; text-align: center; padding: 20px;">No materials match your search</div>';
+                return;
+            }
+
+            list.innerHTML = filteredMaterials.map(m => `
+                <div class="material-item">
+                    <div style="font-weight: 500; margin-bottom: 4px;">${escapeHtml(m.name)}</div>
+                    <div style="font-size: 12px; color: #999; margin-bottom: 8px;">
+                        ${m.vendor.toUpperCase()} • ${m.pricePer.toFixed(2)}${m.packSize > 1 ? ` (Pack of ${m.packSize})` : ''}
+                    </div>
+                    <div style="display: flex; gap: 5px;">
+                        <button class="btn btn-secondary btn-small" onclick="editMaterial('${m.id}')">Edit</button>
+                        <button class="btn btn-secondary btn-small" onclick="deleteMaterial('${m.id}')">Delete</button>
+                        ${m.url ? `<a href="${escapeHtml(m.url)}" target="_blank" style="color: #FF0000; font-size: 12px; line-height: 28px;">View</a>` : ''}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function filterMaterials() {
+            renderMaterials();
+        }
+
+        function showNewMaterialModal() {
+            editingMaterialId = null;
+            document.getElementById('materialName').value = '';
+            document.getElementById('materialDescription').value = '';
+            document.getElementById('materialUrl').value = '';
+            document.getElementById('materialPrice').value = '';
+            document.getElementById('materialPackSize').value = '';
+            document.getElementById('materialVendor').value = 'amazon';
+            openModal('materialModal');
+        }
+
+        function editMaterial(id) {
+            const material = appData.materials.find(m => m.id === id);
+            if (!material) return;
+
+            editingMaterialId = id;
+            document.getElementById('materialName').value = material.name;
+            document.getElementById('materialDescription').value = material.description || '';
+            document.getElementById('materialUrl').value = material.url;
+            document.getElementById('materialPrice').value = material.pricePer;
+            document.getElementById('materialPackSize').value = material.packSize || '';
+            document.getElementById('materialVendor').value = material.vendor;
+            openModal('materialModal');
+        }
+
+        function saveMaterial() {
+            const name = document.getElementById('materialName').value.trim();
+            const url = document.getElementById('materialUrl').value.trim();
+            const price = parseFloat(document.getElementById('materialPrice').value);
+
+            if (!name || !url || isNaN(price)) {
+                alert('Name, URL, and Price are required');
+                return;
+            }
+
+            if (!isValidUrl(url)) {
+                alert('Please enter a valid URL (must start with http:// or https://)');
+                return;
+            }
+
+            const vendor = document.getElementById('materialVendor').value;
+
+            // Check for duplicates
+            const duplicate = appData.materials.find(m => 
+                m.id !== editingMaterialId &&
+                m.name === name && 
+                m.vendor === vendor && 
+                m.url === url
+            );
+
+            if (duplicate) {
+                alert('A material with this name, vendor, and URL already exists');
+                return;
+            }
+
+            const materialData = {
+                name,
+                description: document.getElementById('materialDescription').value.trim(),
+                url,
+                pricePer: price,
+                packSize: parseInt(document.getElementById('materialPackSize').value) || 1,
+                vendor
+            };
+
+            if (editingMaterialId) {
+                const material = appData.materials.find(m => m.id === editingMaterialId);
+                Object.assign(material, materialData);
+            } else {
+                materialData.id = 'mat_' + Date.now();
+                appData.materials.push(materialData);
+            }
+
+            saveData();
+            renderMaterials();
+            closeModal('materialModal');
+        }
+
+        function deleteMaterial(id) {
+            if (!confirm('Are you sure you want to delete this material?')) return;
+            appData.materials = appData.materials.filter(m => m.id !== id);
+            saveData();
+            renderMaterials();
+        }
+
+        function exportMaterials() {
+            if (appData.materials.length === 0) {
+                alert('No materials to export');
+                return;
+            }
+
+            const data = JSON.stringify(appData.materials, null, 2);
+            const blob = new Blob([data], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `BOMPlanner_Materials_${Date.now()}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        function importMaterials() {
+            document.getElementById('importMaterialsFile').click();
+        }
+
+        function handleMaterialsImport(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                try {
+                    const materials = JSON.parse(event.target.result);
+                    
+                    if (!Array.isArray(materials)) {
+                        alert('Invalid materials file format');
+                        return;
+                    }
+
+                    let imported = 0;
+                    let duplicates = 0;
+                    let invalid = 0;
+
+                    materials.forEach(newMat => {
+                        const v = validateMaterialSchema(newMat);
+                        if (!v.valid) {
+                            invalid++;
+                            return;
+                        }
+
+                        // Check for duplicates
+                        const exists = appData.materials.find(m => 
+                            m.name === newMat.name && 
+                            m.vendor === newMat.vendor && 
+                            m.url === newMat.url
+                        );
+
+                        if (!exists) {
+                            // normalize minimal fields
+                            const safeMat = {
+                                id: 'mat_' + Date.now() + '_' + Math.random().toString(36).slice(2,8),
+                                name: newMat.name,
+                                description: newMat.description || '',
+                                url: newMat.url,
+                                pricePer: parseFloat(newMat.pricePer) || 0,
+                                packSize: parseInt(newMat.packSize) || 1,
+                                vendor: newMat.vendor
+                            };
+                            appData.materials.push(safeMat);
+                            imported++;
+                        } else {
+                            duplicates++;
+                        }
+                    });
+
+                    saveData();
+                    renderMaterials();
+                    
+                    alert(`Import complete!\nImported: ${imported}\nSkipped (duplicates): ${duplicates}\nInvalid entries: ${invalid}`);
+                } catch (err) {
+                    alert('Failed to import materials: Invalid file format');
+                }
+            };
+            reader.readAsText(file);
+            e.target.value = '';
+        }
+
+        // BOM management
+        // Project-level grand total removed per user request. Per-vendor totals remain in each section.
+
+        function renderBOMs() {
+            const project = appData.projects.find(p => p.id === appData.currentProjectId);
+            if (!project) return;
+
+            ['amazon', 'aliexpress', 'temu'].forEach(vendor => {
+                renderBOM(vendor, project.boms[vendor]);
+            });
+        }
+
+        function renderBOM(vendor, items) {
+            const container = document.getElementById(`${vendor}BOM`);
+            
+            if (!items || items.length === 0) {
+                container.innerHTML = '<div class="empty-state" style="padding: 20px;">No items yet</div>';
+                // still update header total
+                const totalSpan = document.getElementById(vendor + 'Total');
+                if (totalSpan) totalSpan.textContent = '0.00';
+                return;
+            }
+
+            let subtotal = 0;
+            const rows = items.map((item, index) => {
+                const packMultiplier = Math.ceil(item.quantity / (item.packSize || 1));
+                const itemTotal = packMultiplier * item.pricePer;
+                subtotal += itemTotal;
+
+                return `
+                    <tr>
+                        <td>
+                            ${item.url ? `<a href="${escapeHtml(item.url)}" target="_blank" style="color: #FF0000;">${escapeHtml(item.name)}</a>` : escapeHtml(item.name)}
+                        </td>
+                        <td>${item.quantity}</td>
+                        <td>${item.pricePer.toFixed(2)}</td>
+                        <td>${item.packSize || 1}</td>
+                        <td>${item.onHand || 0}</td>
+                        <td><span class="status-badge status-${item.status}">${item.status}</span></td>
+                        <td>${itemTotal.toFixed(2)}</td>
+                        <td>
+                            <button class="icon-btn" onclick="editBOMItem('${vendor}', ${index})" title="Edit">✏️</button>
+                            <button class="icon-btn" onclick="deleteBOMItem('${vendor}', ${index})" title="Delete">🗑️</button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+
+            const project = appData.projects.find(p => p.id === appData.currentProjectId);
+            const shipping = project.shipping?.[vendor] || 0;
+            const total = subtotal + shipping;
+
+            // update header total display
+            const totalSpan = document.getElementById(vendor + 'Total');
+            if (totalSpan) totalSpan.textContent = total.toFixed(2);
+
+            container.innerHTML = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Item</th>
+                            <th>Qty</th>
+                            <th>Price</th>
+                            <th>Pack</th>
+                            <th>On Hand</th>
+                            <th>Status</th>
+                            <th>Total</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>
+                <div class="cost-summary">
+                    <div class="cost-row">
+                        <span>Subtotal:</span>
+                        <span>${subtotal.toFixed(2)}</span>
+                    </div>
+                    ${shipping > 0 ? `
+                        <div class="cost-row">
+                            <span>Shipping:</span>
+                            <span>${shipping.toFixed(2)}</span>
+                        </div>
+                    ` : ''}
+                    <div class="cost-row cost-total">
+                        <span>Total:</span>
+                        <span>${total.toFixed(2)}</span>
+                    </div>
+                </div>
+            `;
+        }
+
+        function showAddBOMItemModal(vendor) {
+            currentBOMVendor = vendor;
+            
+            // If there was an earlier edit override left in place for some reason, restore original
+            if (window._originalSaveBOMItem) {
+                window.saveBOMItem = window._originalSaveBOMItem;
+                delete window._originalSaveBOMItem;
+            }
+            // Prepare lookup input for this vendor
+            const lookup = document.getElementById('bomMaterialLookup');
+            if (lookup) {
+                lookup.dataset.vendor = vendor;
+                lookup.value = '';
+                renderBomLookupDropdown([]);
+            }
+            // Reset form
+            document.getElementById('bomItemName').value = '';
+            document.getElementById('bomItemUrl').value = '';
+            document.getElementById('bomQuantity').value = '1';
+            document.getElementById('bomPrice').value = '';
+            document.getElementById('bomPackSize').value = '1';
+            document.getElementById('bomOnHand').value = '0';
+            document.getElementById('bomStatus').value = 'pending';
+
+            openModal('bomItemModal');
+
+            // focus lookup input for quick typing
+            setTimeout(() => {
+                const lk = document.getElementById('bomMaterialLookup');
+                if (lk) lk.focus();
+            }, 50);
+        }
+
+        function populateBOMFromMaterial() {
+            // kept for compatibility - selects are replaced by lookup
+            const materialId = document.getElementById('bomMaterialSelect')?.value;
+            if (!materialId) return;
+
+            const material = appData.materials.find(m => m.id === materialId);
+            if (!material) return;
+
+            document.getElementById('bomItemName').value = material.name;
+            document.getElementById('bomItemUrl').value = material.url;
+            document.getElementById('bomPrice').value = material.pricePer;
+            document.getElementById('bomPackSize').value = material.packSize || 1;
+        }
+
+        // Material lookup support for BOM modal
+        let bomLookupResults = [];
+        let bomLookupIndex = -1;
+
+        function openBomLookup(vendor) {
+            const input = document.getElementById('bomMaterialLookup');
+            input.dataset.vendor = vendor;
+            input.value = '';
+            renderBomLookupDropdown([]);
+            input.focus();
+        }
+
+        function renderBomLookupDropdown(results) {
+            const dropdown = document.getElementById('bomMaterialDropdown');
+            bomLookupResults = results;
+            bomLookupIndex = -1;
+            if (!results || results.length === 0) {
+                dropdown.style.display = 'none';
+                dropdown.innerHTML = '';
+                return;
+            }
+
+            dropdown.innerHTML = results.map((m, i) => `
+                <div class="lookup-item" data-idx="${i}" onclick="selectBomLookup(${i})">
+                    <div>${escapeHtml(m.name)}</div>
+                    <div class="lookup-meta">${escapeHtml(m.vendor.toUpperCase())} • ${m.pricePer.toFixed(2)}</div>
+                </div>
+            `).join('');
+            dropdown.style.display = 'block';
+        }
+
+        function selectBomLookup(i) {
+            const m = bomLookupResults[i];
+            if (!m) return;
+            document.getElementById('bomItemName').value = m.name;
+            document.getElementById('bomItemUrl').value = m.url || '';
+            document.getElementById('bomPrice').value = m.pricePer || '';
+            document.getElementById('bomPackSize').value = m.packSize || 1;
+            // set current vendor if not set
+            if (!currentBOMVendor) currentBOMVendor = m.vendor;
+            // hide dropdown
+            renderBomLookupDropdown([]);
+        }
+
+        document.addEventListener('input', (e) => {
+            if (e.target && e.target.id === 'bomMaterialLookup') {
+                const q = e.target.value.trim().toLowerCase();
+                const vendor = e.target.dataset.vendor || null;
+                if (!q) {
+                    renderBomLookupDropdown([]);
+                    return;
+                }
+                const results = appData.materials.filter(m => {
+                    if (vendor && m.vendor !== vendor) return false;
+                    return m.name.toLowerCase().includes(q) || (m.description && m.description.toLowerCase().includes(q));
+                }).slice(0, 50);
+                renderBomLookupDropdown(results);
+            }
+        });
+
+        document.addEventListener('keydown', (e) => {
+            const dropdown = document.getElementById('bomMaterialDropdown');
+            if (!dropdown || dropdown.style.display === 'none') return;
+            if (document.activeElement && document.activeElement.id === 'bomMaterialLookup') {
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    bomLookupIndex = Math.min(bomLookupIndex + 1, bomLookupResults.length - 1);
+                    highlightBomLookup(bomLookupIndex);
+                } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    bomLookupIndex = Math.max(bomLookupIndex - 1, 0);
+                    highlightBomLookup(bomLookupIndex);
+                } else if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (bomLookupIndex >= 0) selectBomLookup(bomLookupIndex);
+                } else if (e.key === 'Escape') {
+                    renderBomLookupDropdown([]);
+                }
+            }
+        });
+
+        function highlightBomLookup(idx) {
+            const items = document.querySelectorAll('#bomMaterialDropdown .lookup-item');
+            items.forEach((it, i) => {
+                it.style.background = i === idx ? '#222' : '';
+            });
+        }
+
+        function saveBOMItem() {
+            const name = document.getElementById('bomItemName').value.trim();
+            const quantity = parseInt(document.getElementById('bomQuantity').value);
+            const price = parseFloat(document.getElementById('bomPrice').value);
+
+            if (!name || isNaN(quantity) || isNaN(price)) {
+                alert('Name, Quantity, and Price are required');
+                return;
+            }
+
+            const url = document.getElementById('bomItemUrl').value.trim();
+            if (url && !isValidUrl(url)) {
+                alert('Please enter a valid URL (must start with http:// or https://)');
+                return;
+            }
+
+            const item = {
+                name,
+                url,
+                quantity,
+                pricePer: price,
+                packSize: parseInt(document.getElementById('bomPackSize').value) || 1,
+                onHand: parseInt(document.getElementById('bomOnHand').value) || 0,
+                status: document.getElementById('bomStatus').value
+            };
+
+            const project = appData.projects.find(p => p.id === appData.currentProjectId);
+            project.boms[currentBOMVendor].push(item);
+
+            saveData();
+            renderBOM(currentBOMVendor, project.boms[currentBOMVendor]);
+            closeModal('bomItemModal');
+        }
+
+        function editBOMItem(vendor, index) {
+            const project = appData.projects.find(p => p.id === appData.currentProjectId);
+            const item = project.boms[vendor][index];
+
+            currentBOMVendor = vendor;
+            
+            document.getElementById('bomMaterialSelect').innerHTML = '<option value="">-- Editing Existing Item --</option>';
+            document.getElementById('bomItemName').value = item.name;
+            document.getElementById('bomItemUrl').value = item.url || '';
+            document.getElementById('bomQuantity').value = item.quantity;
+            document.getElementById('bomPrice').value = item.pricePer;
+            document.getElementById('bomPackSize').value = item.packSize || 1;
+            document.getElementById('bomOnHand').value = item.onHand || 0;
+            document.getElementById('bomStatus').value = item.status;
+
+            openModal('bomItemModal');
+            
+            // Override save function temporarily, but keep original on window so we can restore reliably
+            if (!window._originalSaveBOMItem) {
+                window._originalSaveBOMItem = window.saveBOMItem;
+            }
+            const originalSave = window._originalSaveBOMItem;
+
+            window.saveBOMItem = function() {
+                const name = document.getElementById('bomItemName').value.trim();
+                const quantity = parseInt(document.getElementById('bomQuantity').value);
+                const price = parseFloat(document.getElementById('bomPrice').value);
+
+                if (!name || isNaN(quantity) || isNaN(price)) {
+                    alert('Name, Quantity, and Price are required');
+                    return;
+                }
+
+                const url = document.getElementById('bomItemUrl').value.trim();
+                if (url && !isValidUrl(url)) {
+                    alert('Please enter a valid URL');
+                    return;
+                }
+
+                item.name = name;
+                item.url = url;
+                item.quantity = quantity;
+                item.pricePer = price;
+                item.packSize = parseInt(document.getElementById('bomPackSize').value) || 1;
+                item.onHand = parseInt(document.getElementById('bomOnHand').value) || 0;
+                item.status = document.getElementById('bomStatus').value;
+
+                saveData();
+                renderBOM(vendor, project.boms[vendor]);
+                closeModal('bomItemModal');
+                
+                // restore original save handler after successful edit
+                if (window._originalSaveBOMItem) {
+                    window.saveBOMItem = window._originalSaveBOMItem;
+                    delete window._originalSaveBOMItem;
+                } else if (originalSave) {
+                    window.saveBOMItem = originalSave;
+                }
+            };
+        }
+
+        function deleteBOMItem(vendor, index) {
+            if (!confirm('Remove this item from the BOM?')) return;
+
+            const project = appData.projects.find(p => p.id === appData.currentProjectId);
+            project.boms[vendor].splice(index, 1);
+
+            saveData();
+            renderBOM(vendor, project.boms[vendor]);
+        }
+
+        function updateShipping(vendor) {
+            const project = appData.projects.find(p => p.id === appData.currentProjectId);
+            if (!project.shipping) project.shipping = {};
+            
+            const value = parseFloat(document.getElementById(`${vendor}Shipping`).value) || 0;
+            project.shipping[vendor] = value;
+
+            saveData();
+            renderBOM(vendor, project.boms[vendor]);
+        }
+
+        // Notes management
+        function renderNotes() {
+            const project = appData.projects.find(p => p.id === appData.currentProjectId);
+            if (!project) return;
+
+            const container = document.getElementById('notesList');
+            
+            if (!project.notes || project.notes.length === 0) {
+                container.innerHTML = '<div class="empty-state" style="padding: 20px;">No notes yet</div>';
+                return;
+            }
+
+            container.innerHTML = project.notes.map((note, index) => `
+                <div class="note-item">
+                    <div class="note-actions">
+                        ${index > 0 ? `<button class="icon-btn" onclick="moveNote(${index}, -1)" title="Move Up">↑</button>` : ''}
+                        ${index < project.notes.length - 1 ? `<button class="icon-btn" onclick="moveNote(${index}, 1)" title="Move Down">↓</button>` : ''}
+                        <button class="icon-btn" onclick="editNote(${index})" title="Edit">✏️</button>
+                        <button class="icon-btn" onclick="deleteNote(${index})" title="Delete">🗑️</button>
+                    </div>
+                    <div class="note-content">${linkifyText(escapeHtml(note.content))}</div>
+                    <div class="note-timestamp">${note.timestamp}</div>
+                </div>
+            `).join('');
+        }
+
+        function showAddNoteModal() {
+            editingNoteIndex = null;
+            document.getElementById('noteContent').value = '';
+            openModal('noteModal');
+        }
+
+        function editNote(index) {
+            const project = appData.projects.find(p => p.id === appData.currentProjectId);
+            const note = project.notes[index];
+            
+            editingNoteIndex = index;
+            document.getElementById('noteContent').value = note.content;
+            openModal('noteModal');
+        }
+
+        function saveNote() {
+            const content = document.getElementById('noteContent').value.trim();
+            if (!content) {
+                alert('Note content is required');
+                return;
+            }
+
+            const project = appData.projects.find(p => p.id === appData.currentProjectId);
+            const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 16);
+
+            if (editingNoteIndex !== null) {
+                project.notes[editingNoteIndex].content = content;
+                project.notes[editingNoteIndex].timestamp = timestamp;
+            } else {
+                project.notes.push({ content, timestamp });
+            }
+
+            saveData();
+            renderNotes();
+            closeModal('noteModal');
+        }
+
+        function deleteNote(index) {
+            if (!confirm('Delete this note?')) return;
+
+            const project = appData.projects.find(p => p.id === appData.currentProjectId);
+            project.notes.splice(index, 1);
+
+            saveData();
+            renderNotes();
+        }
+
+        function moveNote(index, direction) {
+            const project = appData.projects.find(p => p.id === appData.currentProjectId);
+            const newIndex = index + direction;
+            
+            if (newIndex < 0 || newIndex >= project.notes.length) return;
+
+            [project.notes[index], project.notes[newIndex]] = [project.notes[newIndex], project.notes[index]];
+
+            saveData();
+            renderNotes();
+        }
+
+        // Utility functions
+        function openModal(id) {
+            document.getElementById(id).classList.add('active');
+        }
+
+        function closeModal(id) {
+            document.getElementById(id).classList.remove('active');
+
+            // If BOM modal closed/cancelled while an edit override is active, restore the original save handler
+            if (id === 'bomItemModal' && window._originalSaveBOMItem) {
+                window.saveBOMItem = window._originalSaveBOMItem;
+                delete window._originalSaveBOMItem;
+            }
+        }
+
+        // Small helper utilities
+        function isValidUrl(str) {
+            try {
+                const u = new URL(str);
+                return u.protocol === 'http:' || u.protocol === 'https:';
+            } catch (e) {
+                return false;
+            }
+        }
+
+        function escapeHtml(text) {
+            if (text == null) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function linkifyText(text) {
+            if (!text) return '';
+            // simple url regex - matches http(s)://... up to whitespace
+            const urlRegex = /(https?:\/\/[^\s"'<>]+)/g;
+            return text.replace(urlRegex, function(url) {
+                return `<a href="${url}" target="_blank" style="color:#FF0000;">${url}</a>`;
+            });
+        }
+
+        // Lightweight JSON schema validators for imports
+        function validateProjectSchema(project) {
+            const errors = [];
+            if (!project || typeof project !== 'object') {
+                errors.push('Project must be an object');
+                return { valid: false, errors };
+            }
+
+            if (!project.name || typeof project.name !== 'string') {
+                errors.push('Missing or invalid "name" (string required)');
+            }
+
+            if (project.metadata && typeof project.metadata !== 'object') {
+                errors.push('"metadata" must be an object if present');
+            } else if (project.metadata) {
+                if (project.metadata.tags && !Array.isArray(project.metadata.tags)) {
+                    errors.push('"metadata.tags" must be an array if present');
+                }
+                if (project.metadata.creationDate && typeof project.metadata.creationDate !== 'string') {
+                    errors.push('"metadata.creationDate" must be a string (ISO date)');
+                }
+                if (project.metadata.links && !Array.isArray(project.metadata.links)) {
+                    errors.push('"metadata.links" must be an array of URLs if present');
+                } else if (project.metadata.links) {
+                    project.metadata.links.forEach((l, i) => {
+                        if (typeof l !== 'string' || !isValidUrl(l)) {
+                            errors.push(`metadata.links[${i}] must be a valid URL`);
+                        }
+                    });
+                }
+            }
+
+            if (project.boms && typeof project.boms !== 'object') {
+                errors.push('"boms" must be an object with vendor arrays');
+            } else if (project.boms) {
+                ['amazon','aliexpress','temu'].forEach(v => {
+                    if (project.boms[v] && !Array.isArray(project.boms[v])) {
+                        errors.push(`"boms.${v}" must be an array if present`);
+                    } else if (project.boms[v]) {
+                        project.boms[v].forEach((item, idx) => {
+                            if (!item || typeof item !== 'object') {
+                                errors.push(`boms.${v}[${idx}] must be an object`);
+                                return;
+                            }
+                            if (!item.name || typeof item.name !== 'string') {
+                                errors.push(`boms.${v}[${idx}].name is required`);
+                            }
+                            if (item.quantity != null && typeof item.quantity !== 'number') {
+                                errors.push(`boms.${v}[${idx}].quantity must be a number`);
+                            }
+                            if (item.pricePer != null && typeof item.pricePer !== 'number') {
+                                errors.push(`boms.${v}[${idx}].pricePer must be a number`);
+                            }
+                        });
+                    }
+                });
+            }
+
+            if (project.shipping && typeof project.shipping !== 'object') {
+                errors.push('"shipping" must be an object if present');
+            }
+
+            if (project.notes && !Array.isArray(project.notes)) {
+                errors.push('"notes" must be an array if present');
+            } else if (project.notes) {
+                project.notes.forEach((n, i) => {
+                    if (!n || typeof n !== 'object' || typeof n.content !== 'string') {
+                        errors.push(`notes[${i}] must be an object with "content" string`);
+                    }
+                });
+            }
+
+            return { valid: errors.length === 0, errors };
+        }
+
+        function validateMaterialSchema(mat) {
+            const errors = [];
+            if (!mat || typeof mat !== 'object') {
+                errors.push('Material must be an object');
+                return { valid: false, errors };
+            }
+
+            if (!mat.name || typeof mat.name !== 'string') {
+                errors.push('Missing or invalid "name"');
+            }
+            if (!mat.url || typeof mat.url !== 'string' || !isValidUrl(mat.url)) {
+                errors.push('Missing or invalid "url" (http:// or https:// required)');
+            }
+            if (mat.pricePer == null || typeof mat.pricePer !== 'number') {
+                // allow strings that can be coerced elsewhere, but warn here
+                errors.push('Missing or invalid "pricePer" (number required)');
+            }
+            if (!mat.vendor || (mat.vendor !== 'amazon' && mat.vendor !== 'aliexpress' && mat.vendor !== 'temu')) {
+                errors.push('Missing or invalid "vendor" (must be "amazon", "aliexpress", or "temu")');
+            }
+
+            return { valid: errors.length === 0, errors };
+        }
+
+        // Tag + link UI helpers for project modal
+        function renderProjectTagsUI() {
+            const container = document.getElementById('projectTagsContainer');
+            if (!container) return;
+            container.innerHTML = tempProjectTags.map((t, i) => `
+                <span class="chip">${escapeHtml(t)}<button class="remove-chip" onclick="removeProjectTag(${i})" title="Remove">✕</button></span>
+            `).join('');
+        }
+        
+        function addProjectTagFromInput() {
+            const input = document.getElementById('projectTagInput');
+            if (!input) return;
+            const raw = input.value.trim();
+            if (!raw) return;
+            // allow comma-separated multiple
+            raw.split(',').map(s => s.trim()).filter(s => s).forEach(s => {
+                if (!tempProjectTags.includes(s)) tempProjectTags.push(s);
+            });
+            input.value = '';
+            renderProjectTagsUI();
+        }
+        
+        function removeProjectTag(idx) {
+            tempProjectTags.splice(idx, 1);
+            renderProjectTagsUI();
+        }
+        
+        function renderProjectLinksUI() {
+            const container = document.getElementById('projectLinksContainer');
+            if (!container) return;
+            container.innerHTML = tempProjectLinks.map((l, i) => `
+                <span class="chip"><a href="${escapeHtml(l)}" target="_blank" style="color:#E0E0E0; text-decoration:none;">${escapeHtml(l)}</a><button class="remove-chip" onclick="removeProjectLink(${i})" title="Remove">✕</button></span>
+            `).join('');
+        }
+        
+        function addProjectLinkFromInput() {
+            const input = document.getElementById('projectLinkInput');
+            if (!input) return;
+            const url = input.value.trim();
+            if (!url) return alert('Enter a URL to add');
+            if (!isValidUrl(url)) return alert('Invalid URL (must start with http:// or https://)');
+            if (!tempProjectLinks.includes(url)) tempProjectLinks.push(url);
+            input.value = '';
+            renderProjectLinksUI();
+        }
+        
+        function removeProjectLink(idx) {
+            tempProjectLinks.splice(idx, 1);
+            renderProjectLinksUI();
+        }
+
+        // Initialize on load
+        init();
+    </script>
+</body>
+</html>
