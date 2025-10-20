@@ -288,3 +288,17 @@
     .included-row { border-left:3px solid var(--accent-color); background:linear-gradient(90deg, rgba(0,0,0,0.02), transparent); }
     .disabled-when-included { opacity:0.5; }
   }
+
+  /* Fullscreen gallery modal */
+  .fullscreen-modal { position:fixed; top:0; left:0; right:0; bottom:0; display:none; z-index:2000; align-items:center; justify-content:center; }
+  .fullscreen-modal.active { display:flex; }
+  .fullscreen-modal .fs-backdrop { position:absolute; inset:0; background:rgba(0,0,0,0.85); }
+  .fullscreen-modal .fs-toolbar { position:absolute; top:16px; right:24px; display:flex; gap:8px; z-index:2010; }
+  .fullscreen-modal .fs-content { position:relative; z-index:2010; max-width:92%; max-height:86%; overflow:auto; display:flex; align-items:center; justify-content:center; }
+  .fullscreen-modal .fs-inner { width:100%; display:flex; flex-direction:column; gap:12px; align-items:center; }
+  .fullscreen-modal .fs-image { max-width:100%; max-height:78vh; border-radius:8px; box-shadow:0 6px 30px rgba(0,0,0,0.6); }
+  .fullscreen-modal .fs-meta { max-width:920px; color:#DDD; text-align:left; margin-top:8px; }
+  .fullscreen-modal .fs-title { font-weight:700; font-size:18px; color:#FFF; margin-bottom:6px; }
+  .fullscreen-modal .fs-note { font-size:14px; color:#CCC; }
+  .fullscreen-modal .icon-btn { background:rgba(255,255,255,0.06); color:#fff; border-radius:6px; padding:8px 12px; border:none; cursor:pointer; font-size:16px; }
+  .fullscreen-modal .icon-btn:hover { background:rgba(255,255,255,0.12); }
