@@ -68,6 +68,8 @@
     setupEventListeners();
     renderProjects();
     renderMaterials();
+  // Update embed UI state to reflect saved settings (enable/disable embed buttons, state messages)
+  try { updateEmbedUIState(); } catch(e) {}
 
     if (appData.projects.length > 0) {
       selectProject(appData.projects[0].id);
@@ -202,10 +204,29 @@
 
   // Embed settings persistence (auto-embed on startup, batch size)
   // Default to disabled to avoid any automatic network requests on startup.
-  var embedSettings = { autoEmbedOnStartup: false, batchSize: 4 };
+  var embedSettings = { enabled: true, autoEmbedOnStartup: false, batchSize: 4 };
   function loadEmbedSettings() { try { var s = localStorage.getItem('bomPlannerEmbedSettings'); if (s) embedSettings = JSON.parse(s); } catch(e){} // ensure defaults
     try { var s = getStorageItem('boManagerEmbedSettings'); if (s) embedSettings = JSON.parse(s); } catch(e){} // ensure defaults
-    try { var autoEl = document.getElementById('autoEmbedOnStartup'); if (autoEl) autoEl.checked = !!embedSettings.autoEmbedOnStartup; var batchEl = document.getElementById('embedBatchSize'); if (batchEl) batchEl.value = embedSettings.batchSize || 4; } catch(e){}
+  try { var autoEl = document.getElementById('autoEmbedOnStartup'); if (autoEl) autoEl.checked = !!embedSettings.autoEmbedOnStartup; var batchEl = document.getElementById('embedBatchSize'); if (batchEl) batchEl.value = embedSettings.batchSize || 4; var enabledEl = document.getElementById('embedImagesEnabled'); if (enabledEl) enabledEl.checked = !!shouldEmbedImages(); } catch(e){}
+  }
+  // Helper: centralize embedding enable/disable check
+  function shouldEmbedImages() {
+    try { return !(embedSettings && embedSettings.enabled === false); } catch (e) { return true; }
+  }
+
+  // Update embed-related UI: enable/disable embed action buttons and show state message
+  function updateEmbedUIState() {
+    try {
+      var enabled = shouldEmbedImages();
+      // toggle buttons with class 'embed-action'
+      var els = document.querySelectorAll('.embed-action');
+      els.forEach(function(b){ if (!b) return; b.disabled = !enabled; if (enabled) { b.classList.remove('disabled'); } else { b.classList.add('disabled'); } });
+      // update inline state message elements
+      var msgs = document.querySelectorAll('.embed-state');
+      msgs.forEach(function(m){ if (!m) return; var text = enabled ? 'Embedding: enabled' : 'Embedding: disabled'; m.textContent = text; m.style.color = enabled ? '#9fe08a' : '#f88'; try { m.setAttribute('role','status'); m.setAttribute('aria-live','polite'); m.setAttribute('aria-atomic','true'); } catch(e){} });
+      // expose state on document for assistive tech / automation
+      try { document.documentElement.setAttribute('data-embedding-enabled', enabled ? 'true' : 'false'); } catch(e) {}
+    } catch(e) { console.warn('updateEmbedUIState failed', e); }
   }
   function loadCompatibilitySettings() { try { var s = localStorage.getItem('bomPlannerCompatibilitySettings'); if (s) compatibilitySettings = JSON.parse(s); } catch(e){} try { var s = getStorageItem('boManagerCompatibilitySettings'); if (s) compatibilitySettings = JSON.parse(s); } catch(e){} try { var el = document.getElementById('forceNonWebpOutput'); if (el) el.checked = !!compatibilitySettings.forceNonWebpOutput; } catch(e){} }
   function saveCompatibilitySettings() { try { setStorageItem('boManagerCompatibilitySettings', JSON.stringify(compatibilitySettings)); } catch(e){ console.warn('Failed to save compatibility settings', e); } }
@@ -226,21 +247,32 @@
     try { var curEl = document.getElementById('appDefaultCurrency'); if (curEl) curEl.value = appSettings.currencyDefault || 'USD'; } catch(e){}
     // reflect embed settings & compatibility into the modal
     try {
-      var autoEl = document.getElementById('autoEmbedOnStartup'); if (autoEl) autoEl.checked = !!(embedSettings && embedSettings.autoEmbedOnStartup);
-      var batchEl = document.getElementById('embedBatchSize'); if (batchEl) batchEl.value = (embedSettings && embedSettings.batchSize) || 4;
+      var enabledEl = document.getElementById('embedImagesEnabled');
+      var autoEl = document.getElementById('autoEmbedOnStartup');
+      var batchEl = document.getElementById('embedBatchSize');
       // compatibility
       loadCompatibilitySettings();
-      var forceEl = document.getElementById('forceNonWebpOutput'); if (forceEl) forceEl.checked = !!(compatibilitySettings && compatibilitySettings.forceNonWebpOutput);
+      var forceEl = document.getElementById('forceNonWebpOutput');
+
+      if (enabledEl) {
+        // Reflect current effective embedding state using helper to centralize logic
+        enabledEl.checked = !!shouldEmbedImages();
+        enabledEl.onchange = function(){ embedSettings.enabled = !!enabledEl.checked; saveEmbedSettings(); updateEmbedUIState(); };
+      }
       if (autoEl) {
+        autoEl.checked = !!(embedSettings && embedSettings.autoEmbedOnStartup);
         autoEl.onchange = function(){ embedSettings.autoEmbedOnStartup = !!autoEl.checked; saveEmbedSettings(); };
       }
       if (batchEl) {
+        batchEl.value = (embedSettings && embedSettings.batchSize) || 4;
         batchEl.onchange = function(){ var v = parseInt(batchEl.value) || 4; embedSettings.batchSize = v; saveEmbedSettings(); };
       }
       if (forceEl) {
+        forceEl.checked = !!(compatibilitySettings && compatibilitySettings.forceNonWebpOutput);
         forceEl.onchange = function(){ compatibilitySettings.forceNonWebpOutput = !!forceEl.checked; saveCompatibilitySettings(); };
       }
-  // localStorage-only UI removed — app avoids any automatic network requests by default
+      // ensure UI reflects current state when opening modal
+      try { updateEmbedUIState(); } catch(e) {}
     } catch(e){}
     openModal('settingsModal');
   }
@@ -302,8 +334,13 @@
 
       // Build embedding promises for all detected remote images (projects + materials)
       var embedPromises = [];
-      [ { arr: projects, type: 'projects' }, { arr: materials, type: 'materials' } ].forEach(function(group){ if (!Array.isArray(group.arr)) return; group.arr.forEach(function(item){ var imgUrl = findImageField(item); if (!imgUrl) return; // attempt to download & resize/convert; on success set thumbnailDataUrl to embedded dataURL; on failure preserve original URL
-          var p = resizeImageFromUrl(imgUrl, 800).then(function(dataUrl){ item.thumbnailDataUrl = dataUrl; }).catch(function(err){ console.warn('Failed to embed remote image', imgUrl, err); item.thumbnailDataUrl = imgUrl; }); embedPromises.push(p); }); });
+  if (shouldEmbedImages()) {
+        [ { arr: projects, type: 'projects' }, { arr: materials, type: 'materials' } ].forEach(function(group){ if (!Array.isArray(group.arr)) return; group.arr.forEach(function(item){ var imgUrl = findImageField(item); if (!imgUrl) return; // attempt to download & resize/convert; on success set thumbnailDataUrl to embedded dataURL; on failure preserve original URL
+            var p = resizeImageFromUrl(imgUrl, 800).then(function(dataUrl){ item.thumbnailDataUrl = dataUrl; }).catch(function(err){ console.warn('Failed to embed remote image', imgUrl, err); item.thumbnailDataUrl = imgUrl; }); embedPromises.push(p); }); });
+      } else {
+        // Embedding disabled: attach remote URLs directly so preview can still reference images without embedding
+        [ { arr: projects, type: 'projects' }, { arr: materials, type: 'materials' } ].forEach(function(group){ if (!Array.isArray(group.arr)) return; group.arr.forEach(function(item){ var imgUrl = findImageField(item); if (!imgUrl) return; item.thumbnailDataUrl = imgUrl; }); });
+      }
 
       // wait for all embedding attempts to finish (they may fail due to CORS), then preview
       Promise.all(embedPromises).then(function(){ if (projects && projects.length > 0) { showImportPreview('projects', projects); } else if (materials && materials.length > 0) { showImportPreview('materials', materials); } else { alert('Source did not contain recognizable "projects" or "materials" arrays'); } }).catch(function(){ // even if some embedding rejected, still show preview
@@ -327,7 +364,13 @@
       src.lastError = null;
       // Attempt to download & embed icon/logo into a data URL (overwrite previous icon if successful)
       if (icon) {
-        resizeImageFromUrl(icon, 800).then(function(dataUrl){ src.iconURL = dataUrl; saveSources(); renderSourcesList(); alert('Source metadata refreshed and icon embedded: ' + name); }).catch(function(err){ console.warn('Failed to embed source icon', icon, err); src.iconURL = icon; saveSources(); renderSourcesList(); alert('Source metadata refreshed (icon could not be embedded): ' + name); });
+        if (!shouldEmbedImages()) {
+          // embedding disabled: preserve remote URL and persist without attempting network fetch
+          src.iconURL = icon;
+          saveSources(); renderSourcesList();
+        } else {
+          resizeImageFromUrl(icon, 800).then(function(dataUrl){ src.iconURL = dataUrl; saveSources(); renderSourcesList(); alert('Source metadata refreshed and icon embedded: ' + name); }).catch(function(err){ console.warn('Failed to embed source icon', icon, err); src.iconURL = icon; saveSources(); renderSourcesList(); alert('Source metadata refreshed (icon could not be embedded): ' + name); });
+        }
       } else {
         saveSources(); renderSourcesList(); alert('Source metadata refreshed: ' + name);
       }
@@ -870,12 +913,15 @@
     // append footer with missing thumbnails info and refresh button
     var footer = '<div style="padding:8px; font-size:12px; color:#999; display:flex; justify-content:space-between; align-items:center;">' +
       '<div>Missing thumbnails: <strong>' + missingCount + '</strong></div>' +
-      '<div><button class="btn btn-secondary btn-small" onclick="embedMissingProjectThumbnails()">Embed missing thumbnails</button></div>' +
+      '<div><button class="btn btn-secondary btn-small embed-action" onclick="embedMissingProjectThumbnails()">Embed missing thumbnails</button> <span class="embed-state" role="status" aria-live="polite" aria-atomic="true" style="margin-left:8px;font-size:12px;"></span></div>' +
       '</div>';
     list.innerHTML = list.innerHTML + footer;
+    try { updateEmbedUIState(); } catch(e) {}
   }
 
   function embedMissingProjectThumbnails() {
+    // Respect setting: if embedding disabled, do nothing (UI disables the action)
+    if (!shouldEmbedImages()) return;
     // Attempt to fetch and embed thumbnails for projects that have remote URLs but no embedded data URL yet
     var projects = appData.projects || [];
     var promises = [];
@@ -941,6 +987,205 @@
     // default main pane
     switchMainView('project');
   }
+
+  // --- Project comparison helpers ---
+  function showProjectComparePicker() {
+    if (!appData.currentProjectId) { alert('Select a project first'); return; }
+    var inp = document.getElementById('compareProjectFile');
+    if (!inp) {
+      inp = document.createElement('input');
+      inp.type = 'file';
+      inp.accept = 'application/json';
+      inp.id = 'compareProjectFile';
+      inp.style.display = 'none';
+      inp.addEventListener('change', handleProjectCompareFile);
+      document.body.appendChild(inp);
+    }
+    inp.click();
+  }
+
+  function handleProjectCompareFile(e) {
+    if (!e || !e.target || !e.target.files || e.target.files.length === 0) return;
+    var f = e.target.files[0]; if (!f) return;
+    var reader = new FileReader();
+    reader.onload = function(ev){
+      try {
+        var parsed = JSON.parse(ev.target.result);
+        var candidate = Array.isArray(parsed) ? (parsed[0] || null) : parsed;
+        if (!candidate || typeof candidate !== 'object') return alert('Invalid project file');
+        var current = (appData.projects||[]).find(function(p){ return p.id === appData.currentProjectId; });
+        if (!current) return alert('No current project selected');
+        var metricsA = computeProjectMetrics(current);
+        var metricsB = computeProjectMetrics(candidate);
+        // close chooser modal if open
+        try { closeModal('projectCompareChooseModal'); } catch(e){}
+        renderProjectComparison(metricsA, metricsB, candidate);
+        openModal('projectCompareModal');
+      } catch(err) { alert('Failed to parse project file: ' + (err && err.message ? err.message : String(err))); }
+    };
+    reader.readAsText(f);
+    e.target.value = '';
+  }
+
+  // Compute the metrics requested for a project-like object
+  function computeProjectMetrics(proj) {
+    // Ensure safe shape
+    proj = proj || {};
+    var out = { name: proj.name || '', thumbnailEmbedded: false, thumbnailSize: 0, galleryEmbeddedCount: 0, galleryEmbeddedSize: 0, notesCount: 0, bomCounts: { amazon:0, aliexpress:0, temu:0, mcmaster:0 }, totalEmbeddedImages: 0 };
+    // thumbnail
+    try {
+      var t = proj.thumbnailDataUrl || (proj.metadata && (proj.metadata.icon || proj.metadata.image)) || null;
+      if (t && typeof t === 'string' && t.indexOf('data:') === 0) { out.thumbnailEmbedded = true; out.thumbnailSize = dataUrlSizeBytes(t); out.totalEmbeddedImages += 1; }
+    } catch(e){}
+    // gallery
+    try {
+      var galleries = proj.gallery || [];
+      galleries.forEach(function(g){ if (!g || !Array.isArray(g.images)) return; g.images.forEach(function(img){ var src = (img && (img.src || img.image || img.data || img.dataUrl || img.thumbnail)) || null; if (src && typeof src === 'string' && src.indexOf('data:') === 0) { out.galleryEmbeddedCount += 1; out.galleryEmbeddedSize += dataUrlSizeBytes(src); out.totalEmbeddedImages += 1; } }); });
+    } catch(e){}
+    // notes
+    try { out.notesCount = Array.isArray(proj.notes) ? proj.notes.length : 0; } catch(e){}
+    // BOM counts per vendor
+    try { ['amazon','aliexpress','temu','mcmaster'].forEach(function(v){ out.bomCounts[v] = Array.isArray(proj.boms && proj.boms[v]) ? proj.boms[v].length : 0; }); } catch(e){}
+    return out;
+  }
+
+  // Compute per-vendor BOM diffs: added, removed, and changed items (based on name and url)
+  function computeBomDiffs(currentProj, newProj) {
+    var vendors = ['amazon','aliexpress','temu','mcmaster'];
+    var result = {};
+    vendors.forEach(function(v){
+      var curList = (currentProj.boms && Array.isArray(currentProj.boms[v])) ? currentProj.boms[v].slice() : [];
+      var newList = (newProj.boms && Array.isArray(newProj.boms[v])) ? newProj.boms[v].slice() : [];
+      // normalize items into key by url if present, else name lowercased
+      function keyOf(it){ if (!it) return ''; if (it.url) return 'u:' + it.url; return 'n:' + (it.name || '').toLowerCase(); }
+      var curMap = {}; curList.forEach(function(it){ curMap[keyOf(it)] = curMap[keyOf(it)] || []; curMap[keyOf(it)].push(it); });
+      var newMap = {}; newList.forEach(function(it){ newMap[keyOf(it)] = newMap[keyOf(it)] || []; newMap[keyOf(it)].push(it); });
+      var added = [], removed = [], changed = [];
+      // find added
+      Object.keys(newMap).forEach(function(k){ if (!curMap[k]) { newMap[k].forEach(function(it){ added.push(it); }); } else {
+        // both exist: compare quantities/prices to detect changed
+        var curItems = curMap[k]; var newItems = newMap[k];
+        // simple compare first item properties
+        for (var i=0;i<Math.max(curItems.length,newItems.length);i++){
+          var ci = curItems[i]; var ni = newItems[i];
+          if (!ci && ni) { added.push(ni); }
+          else if (ci && !ni) { removed.push(ci); }
+          else if (ci && ni) {
+            // consider changed if quantity, pricePer, or packSize differ
+            if ((ci.quantity || 0) !== (ni.quantity || 0) || Number(ci.pricePer || 0) !== Number(ni.pricePer || 0) || (ci.packSize || 0) !== (ni.packSize || 0)) {
+              changed.push({ before: ci, after: ni });
+            }
+          }
+        }
+      } });
+      // find removed keys not in newMap
+      Object.keys(curMap).forEach(function(k){ if (!newMap[k]) { curMap[k].forEach(function(it){ removed.push(it); }); } });
+      result[v] = { added: added, removed: removed, changed: changed, currentCount: curList.length, newCount: newList.length };
+    });
+    return result;
+  }
+
+  function formatDelta(cur, neo) {
+    var d = neo - cur; if (d === 0) return '<span style="color:#ccc;">0</span>'; if (d > 0) return '<span style="color:#9fe08a;">+' + d + '</span>'; return '<span style="color:#f88;">' + d + '</span>';
+  }
+
+  // helper: approximate raw byte size of a data URL by estimating base64 length
+  function dataUrlSizeBytes(dataUrl) {
+    try {
+      if (!dataUrl || typeof dataUrl !== 'string') return 0;
+      var comma = dataUrl.indexOf(','); if (comma === -1) return 0; var meta = dataUrl.substring(0, comma); var b64 = dataUrl.substring(comma + 1);
+      // if not base64, treat as raw and return length
+      if (!/;base64/.test(meta)) return b64.length;
+      // base64 length approx: (3/4) * decodedLength
+      var padded = b64.replace(/\s+/g, ''); var pad = (padded.endsWith('==') ? 2 : (padded.endsWith('=') ? 1 : 0)); var decodedLen = (padded.length * 3 / 4) - pad; return Math.round(decodedLen);
+    } catch(e) { return 0; }
+  }
+
+  function renderProjectComparison(a, b, newProjObj) {
+    try {
+      var el = document.getElementById('projectCompareBody'); if (!el) return;
+      var rows = [];
+      rows.push('<div style="margin-bottom:8px;"><strong>Name</strong></div>');
+      rows.push('<div style="display:flex; gap:12px; margin-bottom:12px;"><div style="flex:1; color:#cfc;">Current: <strong>' + escapeHtml(a.name) + '</strong></div><div style="flex:1; color:#cfc;">New: <strong>' + escapeHtml(b.name) + '</strong></div></div>');
+
+      // thumbnail embedded
+      rows.push('<div style="margin-top:6px;"><strong>Thumbnail embedded</strong></div>');
+      rows.push('<div style="display:flex; gap:12px; margin-bottom:8px;"><div style="flex:1; color:#cfc;">' + (a.thumbnailEmbedded ? 'Yes (' + formatBytes(a.thumbnailSize) + ')' : 'No') + '</div><div style="flex:1; color:#cfc;">' + (b.thumbnailEmbedded ? 'Yes (' + formatBytes(b.thumbnailSize) + ')' : 'No') + '</div></div>');
+
+      // gallery embedded counts and sizes
+      rows.push('<div style="margin-top:6px;"><strong>Gallery embedded images</strong></div>');
+      rows.push('<div style="display:flex; gap:12px; margin-bottom:8px;"><div style="flex:1; color:#cfc;">Count: <strong>' + a.galleryEmbeddedCount + '</strong><br/>Size: <strong>' + formatBytes(a.galleryEmbeddedSize) + '</strong></div><div style="flex:1; color:#cfc;">Count: <strong>' + b.galleryEmbeddedCount + '</strong><br/>Size: <strong>' + formatBytes(b.galleryEmbeddedSize) + '</strong></div></div>');
+
+      // total embedded
+      rows.push('<div style="margin-top:6px;"><strong>Total embedded images</strong></div>');
+      rows.push('<div style="display:flex; gap:12px; margin-bottom:8px;"><div style="flex:1; color:#cfc;">' + a.totalEmbeddedImages + '</div><div style="flex:1; color:#cfc;">' + b.totalEmbeddedImages + '</div></div>');
+
+      // notes count
+      rows.push('<div style="margin-top:6px;"><strong>Notes</strong></div>');
+      rows.push('<div style="display:flex; gap:12px; margin-bottom:8px;"><div style="flex:1; color:#cfc;">' + a.notesCount + '</div><div style="flex:1; color:#cfc;">' + b.notesCount + '</div></div>');
+
+      // BOM counts per vendor
+      rows.push('<div style="margin-top:6px;"><strong>BOM item counts (per vendor)</strong></div>');
+      var vendors = ['amazon','aliexpress','temu','mcmaster'];
+      rows.push('<div style="display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:8px; color:#cfc;">');
+      rows.push('<div><strong>Vendor</strong></div><div><strong>Current</strong></div><div><strong>New</strong></div>');
+      vendors.forEach(function(v){ rows.push('<div>' + v.toUpperCase() + '</div>'); rows.push('<div>' + (a.bomCounts[v] || 0) + '</div>'); rows.push('<div>' + (b.bomCounts[v] || 0) + '</div>'); });
+      rows.push('</div>');
+
+      el.innerHTML = rows.join('');
+      // compute and render per-vendor diffs
+      try {
+        var current = (appData.projects||[]).find(function(p){ return p.id === appData.currentProjectId; });
+        var diffs = computeBomDiffs(current, newProjObj || {});
+        var diffEl = document.getElementById('projectCompareVendorDiffs'); if (!diffEl) return; diffEl.style.display = 'block';
+        var html = [];
+        html.push('<div style="font-size:14px; font-weight:600; margin-bottom:8px;">Per-vendor BOM diffs</div>');
+        Object.keys(diffs).forEach(function(v){ var d = diffs[v]; html.push('<div style="margin-bottom:10px; padding:8px; border-radius:6px; background:#0b0b0b;">'); html.push('<div style="display:flex; justify-content:space-between; align-items:center;">'); html.push('<div style="font-weight:600;">' + v.toUpperCase() + '</div>'); html.push('<div style="font-size:13px; color:#ccc;">Current: <strong>' + d.currentCount + '</strong> New: <strong>' + d.newCount + '</strong> &nbsp; Delta: ' + formatDelta(d.currentCount, d.newCount) + '</div>'); html.push('</div>');
+          // expand/collapse controls
+          html.push('<div style="margin-top:8px; display:flex; gap:8px;">');
+          html.push('<button class="btn btn-small" onclick="(function(elId){ var el = document.getElementById(elId); if (!el) return; el.style.display = (el.style.display === \"none\") ? \"block\" : \"none\"; })(\'vendor_diff_' + v + '\')">Toggle details</button>');
+          html.push('</div>');
+          // Auto-expand if there are any diffs
+          var autoDisplay = (d.added.length || d.removed.length || d.changed.length) ? 'block' : 'none';
+          html.push('<div id="vendor_diff_' + v + '" style="margin-top:8px; display:' + autoDisplay + ';">');
+          // added
+          html.push('<div style="margin-bottom:6px;"><strong style="color:#9fe08a;">Added (' + d.added.length + ')</strong></div>');
+          if (d.added.length) {
+            html.push('<div style="margin-bottom:8px;">' + d.added.map(function(it){ return '<div style="padding:6px; border-bottom:1px solid #111;"><div style="font-weight:600;">' + escapeHtml(it.name || '') + '</div><div style="font-size:12px;color:#999;">' + (it.url ? ('URL: ' + escapeHtml(it.url)) : '') + '</div></div>'; }).join('') + '</div>');
+          }
+          // removed
+          html.push('<div style="margin-bottom:6px;"><strong style="color:#f88;">Removed (' + d.removed.length + ')</strong></div>');
+          if (d.removed.length) {
+            html.push('<div style="margin-bottom:8px;">' + d.removed.map(function(it){ return '<div style="padding:6px; border-bottom:1px solid #111;"><div style="font-weight:600;">' + escapeHtml(it.name || '') + '</div><div style="font-size:12px;color:#999;">' + (it.url ? ('URL: ' + escapeHtml(it.url)) : '') + '</div></div>'; }).join('') + '</div>');
+          }
+          // changed
+          html.push('<div style="margin-bottom:6px;"><strong style="color:#ffd;">Changed (' + d.changed.length + ')</strong></div>');
+          if (d.changed.length) {
+            html.push('<div style="margin-bottom:8px;">' + d.changed.map(function(pair){ var before = pair.before || {}; var after = pair.after || {}; return '<div style="padding:6px; border-bottom:1px solid #111;"><div style="font-weight:600;">' + escapeHtml(after.name || before.name || '') + '</div><div style="font-size:12px;color:#999;">Before: qty=' + (before.quantity || 0) + ' price=' + (before.pricePer || 0) + ' | After: qty=' + (after.quantity || 0) + ' price=' + (after.pricePer || 0) + '</div></div>'; }).join('') + '</div>');
+          }
+          html.push('</div>');
+          html.push('</div>');
+        });
+        diffEl.innerHTML = html.join('');
+      } catch(e) { console.warn('Failed computing/rendering vendor diffs', e); }
+    } catch(e) { console.warn('renderProjectComparison failed', e); }
+  }
+
+  try { if (typeof window !== 'undefined') { window.showProjectComparePicker = showProjectComparePicker; window.handleProjectCompareFile = handleProjectCompareFile; window.computeProjectMetrics = computeProjectMetrics; } } catch(e) {}
+
+  function showProjectCompareChooseModal() {
+    if (!appData.currentProjectId) { alert('Select a project first'); return; }
+    openModal('projectCompareChooseModal');
+  }
+
+  function fetchAndCompareFromRepo() {
+    var url = (document.getElementById('compareRepoUrl') && document.getElementById('compareRepoUrl').value.trim()) || '';
+    if (!url) return alert('Enter a repository URL to fetch');
+    // fetch JSON and reuse compare logic
+    fetch(url).then(function(resp){ if (!resp.ok) throw new Error('Network error ' + resp.status); return resp.json(); }).then(function(parsed){ var candidate = Array.isArray(parsed) ? (parsed[0] || null) : parsed; if (!candidate || typeof candidate !== 'object') return alert('Fetched file does not appear to be a project JSON'); closeModal('projectCompareChooseModal'); var current = (appData.projects||[]).find(function(p){ return p.id === appData.currentProjectId; }); if (!current) return alert('No current project selected'); var metricsA = computeProjectMetrics(current); var metricsB = computeProjectMetrics(candidate); renderProjectComparison(metricsA, metricsB); openModal('projectCompareModal'); }).catch(function(err){ alert('Failed to fetch/parse repository: ' + (err && err.message ? err.message : String(err))); });
+  }
+
+  try { if (typeof window !== 'undefined') { window.showProjectCompareChooseModal = showProjectCompareChooseModal; window.fetchAndCompareFromRepo = fetchAndCompareFromRepo; } } catch(e) {}
 
   function showNewProjectModal() {
     editingProjectId = null;
@@ -1087,6 +1332,29 @@
     var a = document.createElement('a'); a.href = url; a.download = filename; a.click(); URL.revokeObjectURL(url);
   }
 
+  // Show export preview modal with sanitized project JSON (for review before download)
+  function showProjectExportPreview() {
+    var project = (appData.projects || []).find(function(p){ return p.id === appData.currentProjectId; });
+    if (!project) return alert('No project selected');
+    var exportObj = [ sanitizeProject(project) ];
+    // ensure BOM descriptions are present via sanitizeProject copying; nothing extra needed
+    var body = document.getElementById('projectExportPreviewBody'); if (!body) return;
+    body.textContent = JSON.stringify(exportObj, null, 2);
+    openModal('projectExportPreviewModal');
+  }
+
+  function downloadProjectExportFromPreview() {
+    var project = (appData.projects || []).find(function(p){ return p.id === appData.currentProjectId; });
+    if (!project) return alert('No project selected');
+    var exportObj = [ sanitizeProject(project) ];
+    var data = JSON.stringify(exportObj, null, 2);
+    var blob = new Blob([data], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var filename = ((project.name || 'project').replace(/[^a-z0-9]/gi, '_') || 'project') + '.json';
+    var a = document.createElement('a'); a.href = url; a.download = filename; a.click(); URL.revokeObjectURL(url);
+    closeModal('projectExportPreviewModal');
+  }
+
   function importProject() {
     // Trigger file selection first; preview (Merge/Replace) is shown after parsing
     importModeProjects = 'merge';
@@ -1174,7 +1442,26 @@
     }
     // preserve project-specific gallery (standalone images grouped per-project)
     if (Array.isArray(proj.gallery) && proj.gallery.length) {
-      out.gallery = proj.gallery.map(function(g){ return { id: g.id || generateUUID(), title: g.title || '', images: Array.isArray(g.images) ? g.images.slice() : [], createdAt: g.createdAt || new Date().toISOString() }; });
+      out.gallery = proj.gallery.map(function(g){
+        var images = [];
+        if (Array.isArray(g.images)) {
+          images = g.images.map(function(img){
+            try {
+              var src = (img && (img.src || img.image || img.data || img.dataUrl || img.thumbnail)) || null;
+              var note = (img && (img.note || img.caption || img.title)) || '';
+              var title = (img && img.title) || '';
+              var createdAt = (img && img.createdAt) || new Date().toISOString();
+              var outImg = { note: note || '', title: title || '', createdAt: createdAt };
+              // Only include embedded data URLs in exports to avoid large remote fetches and keep file size small
+              if (src && typeof src === 'string' && src.indexOf('data:') === 0) {
+                outImg.src = src;
+              }
+              return outImg;
+            } catch(e) { return { note: '', title: '' }; }
+          });
+        }
+        return { id: g.id || generateUUID(), title: g.title || '', images: images, createdAt: g.createdAt || new Date().toISOString() };
+      });
     }
     // Ensure BOM item currencies and ids are preserved
     ['amazon','aliexpress','temu','mcmaster'].forEach(function(v){ if (Array.isArray(out.boms[v])) { out.boms[v] = out.boms[v].map(function(it){ var copy = Object.assign({}, it); if (it && it.id) copy.id = it.id; if (!copy.currency && it && it.currency) copy.currency = it.currency; return copy; }); } });
@@ -1191,7 +1478,8 @@
     out.url = mat.url || '';
     out.pricePer = mat.pricePer || 0;
     out.currency = mat.currency || 'USD';
-    if (mat.thumbnailDataUrl) out.thumbnailDataUrl = mat.thumbnailDataUrl;
+    // Only export embedded thumbnails (data URLs). Do NOT include remote URLs in export to keep file sizes small.
+    if (mat.thumbnailDataUrl && typeof mat.thumbnailDataUrl === 'string' && mat.thumbnailDataUrl.indexOf('data:') === 0) out.thumbnailDataUrl = mat.thumbnailDataUrl;
     out.vendor = mat.vendor || '';
     out.tags = Array.isArray(mat.tags) ? mat.tags.slice() : [];
     return out;
@@ -1213,12 +1501,10 @@
   function renderMaterials() {
     var searchTerm = (document.getElementById('materialSearch') && document.getElementById('materialSearch').value.toLowerCase()) || '';
     var vendorFilter = (document.getElementById('materialVendorFilter') && document.getElementById('materialVendorFilter').value) || '';
-    var currencyFilter = (document.getElementById('materialCurrencyFilter') && document.getElementById('materialCurrencyFilter').value) || '';
     var filteredMaterials = (appData.materials || []).filter(function(m){
       var matchesSearch = !searchTerm || m.name.toLowerCase().includes(searchTerm) || (m.description && m.description.toLowerCase().includes(searchTerm));
       var matchesVendor = !vendorFilter || m.vendor === vendorFilter;
-      var matchesCurrency = !currencyFilter || (m.currency && m.currency === currencyFilter) || (!m.currency && appSettings.currencyDefault === currencyFilter);
-      return matchesSearch && matchesVendor && matchesCurrency;
+      return matchesSearch && matchesVendor;
     });
     var list = document.getElementById('materialsList');
     if (!list) return;
@@ -1239,8 +1525,8 @@
         '<div style="display:flex; gap:8px; margin-top:8px; justify-content:flex-end;">' +
           '<button class="btn btn-secondary btn-small" onclick="editMaterial(\'' + m.id + '\')">Edit</button>' +
           '<button class="btn btn-secondary btn-small" onclick="deleteMaterial(\'' + m.id + '\')">Delete</button>' +
-          (m.url ? '<a href="' + escapeHtml(m.url) + '" target="_blank" style="color:var(--accent-color);font-size:12px;line-height:28px;">View</a>' : '') +
-          '<button class="btn btn-small" onclick="addMaterialToCurrentProject(\'' + m.id + '\')">Add to Current Project</button>' +
+          (m.url ? '<button class="btn btn-secondary btn-small" onclick="window.open(\'' + escapeHtml(m.url) + '\', \"_blank\")">View</button>' : '') +
+          '<button class="btn btn-small" onclick="addMaterialToCurrentProject(\'' + m.id + '\')">Add to project</button>' +
         '</div></div>';
     }).join('');
   }
@@ -1520,9 +1806,22 @@
   // This function does NOT run automatically and must be explicitly invoked by the user or UI.
   function embedAllSavedThumbnails(batchSizeParam) {
     try {
+      if (!shouldEmbedImages()) {
+        return Promise.resolve({ count: 0 });
+      }
       var candidates = [];
       (appData.materials || []).forEach(function(m){ if (!m) return; if (m.thumbnailDataUrl && m.thumbnailDataUrl.indexOf('data:') === 0) return; var candidate = m.thumbnailDataUrl || m.url || null; if (candidate && typeof candidate === 'string' && candidate.indexOf('http') === 0) candidates.push({ type: 'material', item: m, url: candidate }); });
       (appData.projects || []).forEach(function(p){ if (!p) return; if (p.thumbnailDataUrl && p.thumbnailDataUrl.indexOf('data:') === 0) return; var candidate = p.thumbnailDataUrl || (p.metadata && (p.metadata.icon || p.metadata.image)) || null; if (candidate && typeof candidate === 'string' && candidate.indexOf('http') === 0) candidates.push({ type: 'project', item: p, url: candidate }); });
+      // Include global gallery entries (appData.gallery) if present
+      try {
+        if (Array.isArray(appData.gallery)) {
+          appData.gallery.forEach(function(entry){ if (!entry || !Array.isArray(entry.images)) return; entry.images.forEach(function(img, idx){ var src = (img && (img.src || img.image || img.data || img.dataUrl || img.thumbnail)) || null; if (!src) return; if (typeof src === 'string' && src.indexOf('http') === 0) candidates.push({ type: 'gallery-global', entry: entry, imageObj: img, url: src }); }); });
+        }
+      } catch(e) {}
+      // Include per-project gallery images
+      try {
+        (appData.projects || []).forEach(function(p){ if (!p || !Array.isArray(p.gallery)) return; p.gallery.forEach(function(g){ if (!g || !Array.isArray(g.images)) return; g.images.forEach(function(img, idx){ var src = (img && (img.src || img.image || img.data || img.dataUrl || img.thumbnail)) || null; if (!src) return; if (typeof src === 'string' && src.indexOf('http') === 0) candidates.push({ type: 'gallery-project', project: p, gallery: g, imageObj: img, url: src }); }); }); });
+      } catch(e) {}
       if (!candidates.length) return Promise.resolve({ count: 0 });
       var batchSize = Math.max(1, Math.min(50, Number(batchSizeParam || embedSettings.batchSize) || 6));
       var idx = 0;
@@ -1531,7 +1830,13 @@
         function runBatch() {
           var end = Math.min(idx + batchSize, candidates.length);
           var batch = candidates.slice(idx, end);
-          var ps = batch.map(function(c){ return resizeImageFromUrl(c.url, imageSettings.maxDimension).then(function(dataUrl){ if (dataUrl) { try { c.item.thumbnailDataUrl = dataUrl; successCount++; } catch(e){} } }).catch(function(err){ console.warn('batched embedding failed for', c.url, err); }); });
+          var ps = batch.map(function(c){ return resizeImageFromUrl(c.url, imageSettings.maxDimension).then(function(dataUrl){ if (dataUrl) { try {
+                if (c.type === 'material' && c.item) { c.item.thumbnailDataUrl = dataUrl; }
+                else if (c.type === 'project' && c.item) { c.item.thumbnailDataUrl = dataUrl; }
+                else if (c.type === 'gallery-global' && c.imageObj) { c.imageObj.src = dataUrl; }
+                else if (c.type === 'gallery-project' && c.imageObj) { c.imageObj.src = dataUrl; }
+                successCount++;
+              } catch(e){} } }).catch(function(err){ console.warn('batched embedding failed for', c.url, err); }); });
           Promise.all(ps).then(function(){ idx = end; saveData(); renderMaterials(); renderProjects(); if (idx < candidates.length) { setTimeout(runBatch, 150); } else { resolve({ count: successCount }); } }).catch(function(){ idx = end; saveData(); renderMaterials(); renderProjects(); if (idx < candidates.length) { setTimeout(runBatch, 150); } else { resolve({ count: successCount }); } });
         }
         runBatch();
@@ -1582,6 +1887,13 @@
           }
         } catch (e) { linkedMat = null; }
 
+        // determine description for the project need: prefer BOM item description, then linked material description
+        var needDesc = '';
+        try {
+          if (item && item.description) needDesc = item.description;
+          else if (linkedMat && linkedMat.description) needDesc = linkedMat.description;
+        } catch(e) { needDesc = ''; }
+
         if (linkedMat) {
           matchedHtml = '<div style="font-size:13px; color:#ddd;">Found in Materials: <strong>' + escapeHtml(linkedMat.name) + '</strong> <button class="btn btn-small" style="margin-left:8px;" data-action="removeFromBOM" data-vendor="' + escapeHtml(item._vendor || item.vendor || '') + '" data-vendor-index="' + (item._vendorIndex != null ? item._vendorIndex : idx) + '">Remove from BOM</button></div>';
         } else {
@@ -1597,7 +1909,7 @@
           }
         }
         return '<div style="padding:8px; border-bottom:1px solid #222; display:flex; justify-content:space-between; align-items:center;">' +
-          '<div style="flex:1;">' + '<div style="font-weight:600;">' + escapeHtml(item.name) + '</div>' + '<div style="font-size:12px;color:#999;">Vendor: ' + escapeHtml((item.vendor||item._vendor||'').toUpperCase()) + ' • Qty: ' + (item.quantity || 1) + '</div>' + '</div>' +
+          '<div style="flex:1;">' + '<div style="font-weight:600;">' + escapeHtml(item.name) + '</div>' + (needDesc ? ('<div style="font-size:12px;color:#999;margin-top:6px;">' + escapeHtml(needDesc) + '</div>') : '') + '<div style="font-size:12px;color:#999; margin-top:6px;">Vendor: ' + escapeHtml((item.vendor||item._vendor||'').toUpperCase()) + ' • Qty: ' + (item.quantity || 1) + '</div>' + '</div>' +
           '<div style="margin-left:12px; text-align:right;">' + matchedHtml + '</div>' +
         '</div>';
       }).join('');
@@ -1728,6 +2040,7 @@
       }
 
       container.innerHTML = html;
+      try { updateEmbedUIState(); } catch(e) {}
     } catch (e) { console.warn('renderGallery failed', e); }
   }
 
@@ -1947,7 +2260,33 @@
   function removeProjectThumbnailById(projectId) { var p = (appData.projects || []).find(function(x){ return x.id === projectId; }); if (!p) return; p.thumbnailDataUrl = null; saveData(); renderProjects(); renderGallery(); }
   function removeMaterialThumbnailById(materialId) { var m = (appData.materials || []).find(function(x){ return x.id === materialId; }); if (!m) return; m.thumbnailDataUrl = null; saveData(); renderMaterials(); renderGallery(); }
 
-  function exportGallery() { var project = (appData.projects || []).find(function(p){ return p.id === appData.currentProjectId; }); if (!project || !project.gallery || project.gallery.length === 0) { alert('No gallery items to export for the selected project'); return; } var sanitized = (project.gallery || []).map(function(g){ return { id: g.id, title: g.title, images: Array.isArray(g.images) ? g.images.slice() : [], createdAt: g.createdAt || null }; }); var data = JSON.stringify(sanitized, null, 2); var blob = new Blob([data], { type: 'application/json' }); var url = URL.createObjectURL(blob); var a = document.createElement('a'); a.href = url; a.download = 'BOManager_Gallery_' + (project.name ? project.name.replace(/[^a-z0-9]/gi,'_') + '_' : '') + Date.now() + '.json'; a.click(); URL.revokeObjectURL(url); }
+  function exportGallery() {
+    var project = (appData.projects || []).find(function(p){ return p.id === appData.currentProjectId; });
+    if (!project || !project.gallery || project.gallery.length === 0) { alert('No gallery items to export for the selected project'); return; }
+    var sanitized = (project.gallery || []).map(function(g){
+      var images = [];
+      if (Array.isArray(g.images)) {
+        images = g.images.map(function(img){
+          try {
+            var src = (img && (img.src || img.image || img.data || img.dataUrl || img.thumbnail)) || null;
+            var note = (img && (img.note || img.caption)) || '';
+            var title = (img && img.title) || '';
+            var createdAt = (img && img.createdAt) || new Date().toISOString();
+            var outImg = { note: note || '', title: title || '', createdAt: createdAt };
+            if (src && typeof src === 'string' && src.indexOf('data:') === 0) {
+              outImg.src = src;
+            }
+            return outImg;
+          } catch(e) { return { note: '', title: '' }; }
+        });
+      }
+      return { id: g.id || generateUUID(), title: g.title || '', images: images, createdAt: g.createdAt || null };
+    });
+    var data = JSON.stringify(sanitized, null, 2);
+    var blob = new Blob([data], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a'); a.href = url; a.download = 'BOManager_Gallery_' + (project.name ? project.name.replace(/[^a-z0-9]/gi,'_') + '_' : '') + Date.now() + '.json'; a.click(); URL.revokeObjectURL(url);
+  }
 
   function importGallery() { var project = (appData.projects || []).find(function(p){ return p.id === appData.currentProjectId; }); if (!project) { alert('Select a project before importing gallery items'); return; } var inp = document.getElementById('importGalleryFile'); if (!inp) { inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'application/json'; inp.id = 'importGalleryFile'; inp.style.display = 'none'; inp.addEventListener('change', handleGalleryImport); document.body.appendChild(inp); } inp.click(); }
 
@@ -2334,13 +2673,26 @@
   try { window.showProjectMaterialPicker = showProjectMaterialPicker; window.confirmProjectMaterialPick = confirmProjectMaterialPick; window.toggleProjectPickerNewForm = toggleProjectPickerNewForm; window.createMaterialFromPicker = createMaterialFromPicker; window.selectProjectMaterial = selectProjectMaterial; } catch(e) {}
 
   function refreshInventoryThumbnails() {
+    // Respect embedSettings: if embedding is disabled, do nothing (UI disables actions)
+    if (!shouldEmbedImages()) return;
     // Reuse embedMissingProjectThumbnails for projects and run similar for materials
     var promises = [];
-    (appData.materials || []).forEach(function(m){ if (!m) return; if (m.thumbnailDataUrl && m.thumbnailDataUrl.indexOf('data:') === 0) return; var candidate = m.thumbnailDataUrl || m.url || null; if (candidate && typeof candidate === 'string' && candidate.indexOf('http') === 0) { var p = resizeImageFromUrl(candidate, imageSettings.maxDimension).then(function(dataUrl){ m.thumbnailDataUrl = dataUrl; }).catch(function(err){ console.warn('refreshInventoryThumbnails failed for', candidate, err); }); promises.push(p); } });
+    (appData.materials || []).forEach(function(m){ if (!m) return; if (m.thumbnailDataUrl && m.thumbnailDataUrl.indexOf('data:') === 0) return; var candidate = m.thumbnailDataUrl || m.url || null; if (candidate && typeof candidate === 'string' && candidate.indexOf('http') === 0) { if (shouldEmbedImages()) { var p = resizeImageFromUrl(candidate, imageSettings.maxDimension).then(function(dataUrl){ m.thumbnailDataUrl = dataUrl; }).catch(function(err){ console.warn('refreshInventoryThumbnails failed for', candidate, err); }); promises.push(p); } else { /* embedding disabled: skip */ } } });
     // also attempt projects
-    (appData.projects || []).forEach(function(p){ if (!p) return; if (p.thumbnailDataUrl && p.thumbnailDataUrl.indexOf('data:') === 0) return; var candidate = p.thumbnailDataUrl || (p.metadata && (p.metadata.icon || p.metadata.image)) || null; if (candidate && typeof candidate === 'string' && candidate.indexOf('http') === 0) { var pr = resizeImageFromUrl(candidate, imageSettings.maxDimension).then(function(dataUrl){ p.thumbnailDataUrl = dataUrl; }).catch(function(err){ console.warn('refreshInventoryThumbnails project failed for', candidate, err); }); promises.push(pr); } });
-    if (promises.length === 0) { alert('No external thumbnails found to embed'); return; }
-    Promise.all(promises).then(function(){ saveData(); renderMaterials(); renderProjects(); renderInventory(); alert('Embedding attempts complete'); }).catch(function(){ saveData(); renderMaterials(); renderProjects(); renderInventory(); alert('Embedding attempts complete (some may have failed)'); });
+  (appData.projects || []).forEach(function(p){ if (!p) return; if (p.thumbnailDataUrl && p.thumbnailDataUrl.indexOf('data:') === 0) return; var candidate = p.thumbnailDataUrl || (p.metadata && (p.metadata.icon || p.metadata.image)) || null; if (candidate && typeof candidate === 'string' && candidate.indexOf('http') === 0) { if (shouldEmbedImages()) { var pr = resizeImageFromUrl(candidate, imageSettings.maxDimension).then(function(dataUrl){ p.thumbnailDataUrl = dataUrl; }).catch(function(err){ console.warn('refreshInventoryThumbnails project failed for', candidate, err); }); promises.push(pr); } else { /* skip when embedding disabled */ } } });
+    // Include global gallery entries
+    try {
+      if (Array.isArray(appData.gallery)) {
+        appData.gallery.forEach(function(entry){ if (!entry || !Array.isArray(entry.images)) return; entry.images.forEach(function(img){ try { var src = (img && (img.src || img.image || img.data || img.dataUrl || img.thumbnail)) || null; if (!src) return; if (typeof src === 'string' && src.indexOf('http') === 0) { var pg = resizeImageFromUrl(src, imageSettings.maxDimension).then(function(dataUrl){ img.src = dataUrl; }).catch(function(err){ console.warn('refreshInventoryThumbnails gallery-global failed for', src, err); }); promises.push(pg); } } catch(e){} }); });
+      }
+    } catch(e){}
+    // Include per-project gallery images
+    try {
+      (appData.projects || []).forEach(function(p){ if (!p || !Array.isArray(p.gallery)) return; p.gallery.forEach(function(g){ if (!g || !Array.isArray(g.images)) return; g.images.forEach(function(img){ try { var src = (img && (img.src || img.image || img.data || img.dataUrl || img.thumbnail)) || null; if (!src) return; if (typeof src === 'string' && src.indexOf('http') === 0) { var prg = resizeImageFromUrl(src, imageSettings.maxDimension).then(function(dataUrl){ img.src = dataUrl; }).catch(function(err){ console.warn('refreshInventoryThumbnails gallery-project failed for', src, err); }); promises.push(prg); } } catch(e){} }); }); });
+    } catch(e){}
+
+    if (promises.length === 0) { return; }
+    Promise.all(promises).then(function(){ saveData(); renderMaterials(); renderProjects(); renderInventory(); try { updateEmbedUIState(); } catch(e) {} }).catch(function(){ saveData(); renderMaterials(); renderProjects(); renderInventory(); try { updateEmbedUIState(); } catch(e) {} });
   }
 
   function exportMaterials() { if (!appData.materials || appData.materials.length === 0) { alert('No materials to export'); return; } var data = JSON.stringify(appData.materials, null, 2); var blob = new Blob([data], { type: 'application/json' }); var url = URL.createObjectURL(blob); var a = document.createElement('a'); a.href = url; a.download = 'BOManager_Materials_' + Date.now() + '.json'; a.click(); URL.revokeObjectURL(url); }
@@ -2383,8 +2735,20 @@
       var packMultiplier = Math.ceil((item.quantity || 0) / (item.packSize || 1));
       var itemTotal = packMultiplier * (item.pricePer || 0);
       subtotal += itemTotal;
+      // determine description: prefer explicit BOM item description, otherwise fall back to linked material description
+      var desc = '';
+      try {
+        if (item.description) desc = item.description;
+        else if (item.__linkedMaterialId) {
+          var linked = (appData.materials || []).find(function(m){ return m && m.id === item.__linkedMaterialId; });
+          if (linked && linked.description) desc = linked.description;
+        }
+      } catch(e) { desc = ''; }
+      var itemNameHtml = item.url ? ('<a href="' + escapeHtml(item.url) + '" target="_blank" style="color:var(--accent-color);">' + escapeHtml(item.name) + '</a>') : escapeHtml(item.name);
+      var descHtml = desc ? ('<div style="font-size:12px;color:#999;margin-top:6px;">' + escapeHtml(desc) + '</div>') : '';
       return '<tr>' +
-        '<td>' + (item.url ? '<a href="' + escapeHtml(item.url) + '" target="_blank" style="color:var(--accent-color);">' + escapeHtml(item.name) + '</a>' : escapeHtml(item.name)) + '</td>' +
+        '<td>' + itemNameHtml + '</td>' +
+  '<td class="description-cell">' + (desc ? ('<div>' + escapeHtml(desc) + '</div>') : '') + '</td>' +
         '<td>' + (item.quantity || '') + '</td>' +
         '<td>' + (item.pricePer != null ? (item.pricePer).toFixed(2) : '') + '</td>' +
         '<td>' + (item.packSize || 1) + '</td>' +
@@ -2398,7 +2762,7 @@
     var shipping = project && project.shipping ? (project.shipping[vendor] || 0) : 0;
     var total = subtotal + (shipping || 0);
     var totalSpan = document.getElementById(vendor + 'Total'); if (totalSpan) totalSpan.textContent = total.toFixed(2);
-    container.innerHTML = '<table><thead><tr><th>Item</th><th>Qty</th><th>Price</th><th>Pack</th><th>On Hand</th><th>Status</th><th>Total</th><th>Actions</th></tr></thead><tbody>' + rows + '</tbody></table>' +
+    container.innerHTML = '<table><thead><tr><th>Item</th><th>Description</th><th>Qty</th><th>Price</th><th>Pack</th><th>On Hand</th><th>Status</th><th>Total</th><th>Actions</th></tr></thead><tbody>' + rows + '</tbody></table>' +
       '<div class="cost-summary"><div class="cost-row"><span>Subtotal:</span><span>' + subtotal.toFixed(2) + '</span></div>' + (shipping > 0 ? '<div class="cost-row"><span>Shipping:</span><span>' + shipping.toFixed(2) + '</span></div>' : '') + '<div class="cost-row cost-total"><span>Total:</span><span>' + total.toFixed(2) + '</span></div></div>';
   }
 
@@ -2496,7 +2860,8 @@
     if (!name || isNaN(quantity) || isNaN(price)) { alert('Name, Quantity, and Price are required'); return; }
     var url = document.getElementById('bomItemUrl') ? document.getElementById('bomItemUrl').value.trim() : '';
     if (url && !isValidUrl(url)) { alert('Please enter a valid URL (must start with http:// or https://)'); return; }
-    var item = { name: name, url: url, quantity: quantity, pricePer: price, packSize: parseInt(document.getElementById('bomPackSize') ? document.getElementById('bomPackSize').value : 1) || 1, onHand: parseInt(document.getElementById('bomOnHand') ? document.getElementById('bomOnHand').value : 0) || 0, status: document.getElementById('bomStatus') ? document.getElementById('bomStatus').value : 'pending' };
+  var description = document.getElementById('bomItemDescription') ? document.getElementById('bomItemDescription').value.trim() : '';
+  var item = { name: name, url: url, description: description, quantity: quantity, pricePer: price, packSize: parseInt(document.getElementById('bomPackSize') ? document.getElementById('bomPackSize').value : 1) || 1, onHand: parseInt(document.getElementById('bomOnHand') ? document.getElementById('bomOnHand').value : 0) || 0, status: document.getElementById('bomStatus') ? document.getElementById('bomStatus').value : 'pending' };
     var project = (appData.projects || []).find(function(p){ return p.id === appData.currentProjectId; }); if (!project) return;
     project.boms = project.boms || {}; project.boms[currentBOMVendor] = project.boms[currentBOMVendor] || [];
     project.boms[currentBOMVendor].push(item);
@@ -2507,7 +2872,8 @@
     var project = (appData.projects || []).find(function(p){ return p.id === appData.currentProjectId; }); if (!project) return; var item = (project.boms && project.boms[vendor]) ? project.boms[vendor][index] : null; if (!item) return;
     currentBOMVendor = vendor;
     var selectEl = document.getElementById('bomMaterialSelect'); if (selectEl) selectEl.innerHTML = '<option value="">-- Editing Existing Item --</option>';
-    document.getElementById('bomItemName') && (document.getElementById('bomItemName').value = item.name);
+  document.getElementById('bomItemName') && (document.getElementById('bomItemName').value = item.name);
+  document.getElementById('bomItemDescription') && (document.getElementById('bomItemDescription').value = item.description || '');
     document.getElementById('bomItemUrl') && (document.getElementById('bomItemUrl').value = item.url || '');
     document.getElementById('bomQuantity') && (document.getElementById('bomQuantity').value = item.quantity);
     document.getElementById('bomPrice') && (document.getElementById('bomPrice').value = item.pricePer);
@@ -2524,7 +2890,8 @@
       if (!name || isNaN(quantity) || isNaN(price)) { alert('Name, Quantity, and Price are required'); return; }
       var url = document.getElementById('bomItemUrl') ? document.getElementById('bomItemUrl').value.trim() : '';
       if (url && !isValidUrl(url)) { alert('Please enter a valid URL'); return; }
-      item.name = name; item.url = url; item.quantity = quantity; item.pricePer = price; item.packSize = parseInt(document.getElementById('bomPackSize') ? document.getElementById('bomPackSize').value : 1) || 1; item.onHand = parseInt(document.getElementById('bomOnHand') ? document.getElementById('bomOnHand').value : 0) || 0; item.status = document.getElementById('bomStatus') ? document.getElementById('bomStatus').value : item.status;
+  var description = document.getElementById('bomItemDescription') ? document.getElementById('bomItemDescription').value.trim() : '';
+  item.name = name; item.url = url; item.description = description; item.quantity = quantity; item.pricePer = price; item.packSize = parseInt(document.getElementById('bomPackSize') ? document.getElementById('bomPackSize').value : 1) || 1; item.onHand = parseInt(document.getElementById('bomOnHand') ? document.getElementById('bomOnHand').value : 0) || 0; item.status = document.getElementById('bomStatus') ? document.getElementById('bomStatus').value : item.status;
       saveData(); renderBOM(vendor, project.boms[vendor]); closeModal('bomItemModal');
       if (window._originalSaveBOMItem) { window.saveBOMItem = window._originalSaveBOMItem; delete window._originalSaveBOMItem; }
       else if (originalSave) { window.saveBOMItem = originalSave; }

@@ -139,6 +139,10 @@
     transform: none;
   }
 
+  /* Embedding UI state indicators and disabled styles */
+  .embed-state { font-size:12px; margin-left:6px; color:#9fe08a; vertical-align:middle; }
+  button.embed-action.disabled, button.embed-action[disabled] { opacity:0.45; cursor:not-allowed; filter:grayscale(30%); }
+
   /* Removed hamburger button styles (feature disabled).
      Keep collapsed width and header adjustments minimal to avoid visual breakage. */
   /* Previously the header span and settings button were hidden when collapsed; keep them visible to avoid missing controls. */
@@ -218,6 +222,9 @@
     table { width:100%; border-collapse:collapse; }
     th, td { padding:12px; text-align:left; border-bottom:1px solid #333; }
     th { background-color:#252525; font-weight:600; color:var(--accent-color); }
+  /* Description column styling: allow wrapping but limit visible lines for tidy layout */
+  td.description-cell { max-width:420px; vertical-align:top; }
+  td.description-cell div { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; line-clamp:2; overflow:hidden; text-overflow:ellipsis; white-space:normal; color:#ccc; font-size:13px; }
     .note-item { background-color:#252525; padding:15px; border-radius:4px; margin-bottom:10px; position:relative; }
     .note-content { margin-bottom:8px; word-wrap:break-word; }
     .note-content a { color:var(--accent-color); text-decoration:none; }
@@ -294,6 +301,11 @@
     .included-row { border-left:3px solid var(--accent-color); background:linear-gradient(90deg, rgba(0,0,0,0.02), transparent); }
     .disabled-when-included { opacity:0.5; }
   }
+
+  /* Ensure action buttons in materials list are compact and evenly spaced */
+  .material-item .btn { min-height:36px; line-height:20px; padding:8px 12px; }
+  .material-item .btn.btn-small { padding:6px 10px; min-height:34px; }
+  .material-item .btn + .btn { margin-left:8px; }
 
   /* Fullscreen gallery modal */
   .fullscreen-modal { position:fixed; top:0; left:0; right:0; bottom:0; display:none; z-index:2000; align-items:center; justify-content:center; }
