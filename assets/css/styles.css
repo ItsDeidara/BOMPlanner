@@ -265,6 +265,12 @@
     .lookup-item { padding:8px 10px; cursor:pointer; display:flex; justify-content:space-between; gap:8px; align-items:center; }
     .lookup-item:hover { background:#222; }
     .lookup-meta { font-size:12px; color:#999; }
+  /* New lookup panel (wheel) for BOM item selection */
+  .lookup-panel { margin-top:8px; }
+  .lookup-wheel { max-height:280px; overflow:auto; padding:6px; }
+  .lookup-wheel .lookup-item { padding:10px; border-radius:6px; margin-bottom:6px; background:#0b0b0b; }
+  .lookup-wheel .lookup-item:hover, .lookup-wheel .lookup-item:focus, .lookup-wheel .lookup-item.lookup-selected { background:#222; }
+  .lookup-desc { color:#999; font-size:13px; margin-top:6px; }
 
     .pane-anim-hidden { display:none; }
 

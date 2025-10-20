@@ -1,0 +1,14 @@
+{
+  "id": "proj_example_001",
+  "name": "Example Hosted Project",
+  "metadata": {
+    "description": "This is an example project JSON file to demonstrate the hosted Projects format.",
+    "tags": ["example","demo"],
+    "credits": [ { "name": "author", "url": "https://example.com" } ],
+    "creationDate": "2025-10-19"
+  },
+  "boms": { "amazon": [], "aliexpress": [], "temu": [], "mcmaster": [] },
+  "shipping": {},
+  "notes": [],
+  "thumbnailDataUrl": null
+}

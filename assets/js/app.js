@@ -450,6 +450,20 @@
       }
     });
 
+    // Delegated click handler for BOM lookup dropdown
+    try {
+      var bomDropdown = document.getElementById('bomMaterialDropdown');
+      if (bomDropdown && !bomDropdown._hasClick) {
+        bomDropdown.addEventListener('click', function(ev){
+          var el = ev.target;
+          while (el && el !== bomDropdown && !el.classList.contains('lookup-item')) el = el.parentNode;
+          if (!el || el === bomDropdown) return;
+          var idx = el.getAttribute('data-idx'); if (!idx) return; try { selectBomLookup(parseInt(idx)); } catch(e) { console.warn('selectBomLookup failed', e); }
+        });
+        bomDropdown._hasClick = true;
+      }
+    } catch(e) { console.warn('Failed to attach bom dropdown click handler', e); }
+
     // Tag autocomplete: attach input listener for materialTagsInput
     var materialTagsInput = document.getElementById('materialTagsInput');
     if (materialTagsInput) {
@@ -1215,18 +1229,31 @@
   var thumb = m.thumbnailDataUrl ? '<img src="' + escapeHtml(m.thumbnailDataUrl) + '" style="width:36px;height:36px;border-radius:6px;object-fit:cover;margin-right:8px;">' : '';
   var packBadge = m.isPack ? '<span class="pack-badge">Pack of <strong>' + (m.packSizeOption || m.packSize || 1) + '</strong></span>' : '';
   var includedBadge = m.isIncluded ? '<span class="included-badge">Included</span>' : '';
-      return '<div class="material-item">' +
+  var desc = m.description ? '<div style="font-size:13px; color:#ccc; margin-top:6px;">' + escapeHtml(m.description) + '</div>' : '';
+      return '<div class="material-item" style="padding:10px; border-bottom:1px solid #222;">' +
         '<div style="display:flex; align-items:center; gap:8px;"><div>' + thumb + '</div><div style="flex:1">' +
   '<div style="font-weight:500;margin-bottom:4px;">' + escapeHtml(m.name) + ' ' + packBadge + includedBadge + '</div>' +
   '<div style="font-size:12px;color:#999;margin-bottom:8px;">' + (m.vendor && m.vendor.toUpperCase ? escapeHtml(m.vendor.toUpperCase()) : '') + ' • ' + formatCurrency(m.pricePer, m.currency) + '</div>' +
-        tagsHtml +
+        desc + tagsHtml +
         '</div></div>' +
-        '<div style="display:flex; gap:5px; margin-top:8px;">' +
+        '<div style="display:flex; gap:8px; margin-top:8px; justify-content:flex-end;">' +
           '<button class="btn btn-secondary btn-small" onclick="editMaterial(\'' + m.id + '\')">Edit</button>' +
-          '<button class="btn btn-secondary btn-small" onclick="deleteMaterial(\'' + m.id + '\')">Delete</button>' + (m.url ? '<a href="' + escapeHtml(m.url) + '" target="_blank" style="color:var(--accent-color);font-size:12px;line-height:28px;">View</a>' : '') +
+          '<button class="btn btn-secondary btn-small" onclick="deleteMaterial(\'' + m.id + '\')">Delete</button>' +
+          (m.url ? '<a href="' + escapeHtml(m.url) + '" target="_blank" style="color:var(--accent-color);font-size:12px;line-height:28px;">View</a>' : '') +
+          '<button class="btn btn-small" onclick="addMaterialToCurrentProject(\'' + m.id + '\')">Add to Current Project</button>' +
         '</div></div>';
     }).join('');
   }
+
+  // Helper: add a material to the currently selected project's BOM under its vendor
+  function addMaterialToCurrentProject(materialId) {
+    try {
+      if (!materialId) return alert('No material specified');
+      addInventoryToCurrentProject(materialId);
+    } catch (e) { console.warn('addMaterialToCurrentProject failed', e); alert('Failed to add material to project'); }
+  }
+
+  try { if (typeof window !== 'undefined') window.addMaterialToCurrentProject = addMaterialToCurrentProject; } catch(e) {}
 
   function filterMaterials(){ renderMaterials(); }
 
@@ -1524,7 +1551,13 @@
     var project = (appData.projects || []).find(function(p){ return p.id === appData.currentProjectId; });
     var needs = [];
     if (project && project.boms) {
-      ['amazon','aliexpress','temu','mcmaster'].forEach(function(v){ (project.boms[v] || []).forEach(function(item, vendorIdx){ var clone = Object.assign({ vendor: v }, item); clone._vendor = v; clone._vendorIndex = vendorIdx; needs.push(clone); }); });
+      // push canonical BOM entry objects (not clones) so render reflects persisted markers like __linkedMaterialId
+      ['amazon','aliexpress','temu','mcmaster'].forEach(function(v){
+        (project.boms[v] || []).forEach(function(entry, vendorIdx){
+          try { entry._vendor = v; entry._vendorIndex = vendorIdx; } catch(e){}
+          needs.push(entry);
+        });
+      });
     }
 
     // render project needs
@@ -2055,15 +2088,16 @@
   function updateInventoryOnHand(id, val) {
     var n = parseInt(val); if (isNaN(n) || n < 0) n = 0; var mat = (appData.materials || []).find(function(x){ return x.id === id; }); if (!mat) return; mat.onHand = n; saveData(); renderInventory(); renderMaterials(); }
 
-  function addInventoryToCurrentProject(materialId) {
+  function addInventoryToCurrentProject(materialId, vendorOverride) {
     try {
+      try { console.debug('[DEBUG][addInventoryToCurrentProject] called with', materialId); } catch(e){}
       var mat = (appData.materials || []).find(function(m){ return m.id === materialId; });
       if (!mat) { console.warn('Material not found', materialId); return; }
       if (!appData.currentProjectId) { console.warn('Select a project first'); return; }
       var project = (appData.projects || []).find(function(p){ return p.id === appData.currentProjectId; }); if (!project) { console.warn('Project not found'); return; }
 
       // If this material is a kit/pack with components, expand automatically:
-      if (mat.isPack && Array.isArray(mat.components) && mat.components.length > 0) {
+  if (mat.isPack && Array.isArray(mat.components) && mat.components.length > 0) {
         // Ensure project.boms exists
         project.boms = project.boms || {};
         var added = 0;
@@ -2086,6 +2120,8 @@
           project.boms[vendorForComp] = project.boms[vendorForComp] || [];
           var bomItem = { name: match.name, url: match.url || comp.url || '', quantity: comp.quantity || 1, pricePer: match.pricePer || comp.pricePer || 0, packSize: 1, onHand: match.onHand || 0, status: 'pending', __linkedMaterialId: match.id };
           project.boms[vendorForComp].push(bomItem);
+          // Defensive: ensure the canonical BOM entry we just pushed has the linked marker set (avoid any clone/indexing surprises)
+          try { project.boms[vendorForComp][project.boms[vendorForComp].length - 1].__linkedMaterialId = match.id; } catch(e){}
           added++;
         });
         saveData();
@@ -2096,7 +2132,8 @@
       }
 
       // Default behavior for non-kits: prefer linking to an existing BOM entry for this project need
-      var vendor = mat.vendor || 'amazon';
+  // vendorOverride can force which vendor BOM to add into (picker or UI can supply)
+  var vendor = vendorOverride || mat.vendor || 'amazon';
       project.boms = project.boms || {};
       var linked = false;
       try {
@@ -2119,9 +2156,10 @@
           }
           if (linked) break;
         }
-      } catch (e) { console.warn('link search failed', e); }
+  } catch (e) { console.warn('link search failed', e); }
 
       if (linked) {
+        try { console.debug('[DEBUG][addInventoryToCurrentProject] linked existing BOM entry to material', { materialId: mat.id }); } catch(e){}
         saveData();
         try { renderBOMs(); } catch(e){}
         try { renderInventory(); } catch(e){}
@@ -2130,10 +2168,14 @@
       }
 
       // No existing BOM entry matched — create a new BOM item and mark it linked
-      var item = { name: mat.name, url: mat.url || '', quantity: 1, pricePer: mat.pricePer || 0, packSize: mat.packSize || 1, onHand: mat.onHand || 0, status: 'pending', __linkedMaterialId: mat.id };
-      project.boms[vendor] = project.boms[vendor] || [];
-      project.boms[vendor].push(item);
+    var item = { name: mat.name, url: mat.url || '', quantity: 1, pricePer: mat.pricePer || 0, packSize: mat.packSize || 1, onHand: mat.onHand || 0, status: 'pending', __linkedMaterialId: mat.id };
+    project.boms[vendor] = project.boms[vendor] || [];
+    project.boms[vendor].push(item);
+  // Defensive: explicitly mark the canonical BOM entry we just added
+  try { project.boms[vendor][project.boms[vendor].length - 1].__linkedMaterialId = mat.id; } catch(e){}
+      try { console.debug('[DEBUG][addInventoryToCurrentProject] created new BOM entry', { vendor: vendor, item: item, projectId: project.id }); } catch(e){}
       saveData();
+  try { console.debug('[DEBUG][addInventoryToCurrentProject] project.boms after create', JSON.parse(JSON.stringify(project.boms || {}))); } catch(e){}
       try { renderBOMs(); } catch(e){}
       try { renderInventory(); } catch(e){}
       try { renderMaterials(); } catch(e){}
@@ -2141,6 +2183,155 @@
       console.warn('addInventoryToCurrentProject failed', e);
     }
   }
+
+  // defensive export so inline onclicks / old code can call this
+  try { window.addInventoryToCurrentProject = addInventoryToCurrentProject; } catch(e) {}
+
+  // --- Project Material Picker (searchable modal similar to Inventory Add-onboarding) ---
+  var _projectPickerCurrentVendor = null;
+  var _projectPickerResults = [];
+  var _projectPickerIndex = -1;
+  var _projectPickerSelectedId = null;
+
+  function showProjectMaterialPicker(vendor) {
+    _projectPickerCurrentVendor = vendor || 'amazon';
+    _projectPickerResults = [];
+    _projectPickerIndex = -1;
+    _projectPickerSelectedId = null;
+    var inp = document.getElementById('projectMaterialSearch'); if (inp) { inp.value = ''; // if vendor == '' means allow all; otherwise set dataset vendor to filter
+      inp.dataset.vendor = (_projectPickerCurrentVendor === '' ? '' : _projectPickerCurrentVendor);
+      inp.focus(); }
+    // set inline new-form vendor display so quick-create shows correct vendor
+    try { var vendorField = document.getElementById('pickerNewVendor'); if (vendorField) vendorField.value = (_projectPickerCurrentVendor || 'amazon'); } catch(e) {}
+    try { var modalVendor = document.getElementById('projectPickerVendorSelect'); if (modalVendor) { modalVendor.value = vendor || ''; } } catch(e) {}
+    renderProjectMaterialLookup([]);
+    openModal('projectMaterialPickerModal');
+  }
+
+  function renderProjectMaterialLookup(results) {
+    _projectPickerResults = results || [];
+    _projectPickerIndex = -1; _projectPickerSelectedId = null;
+    var panel = document.getElementById('projectMaterialLookupPanel');
+    var wheel = document.getElementById('projectMaterialLookupWheel');
+    var dropdown = document.getElementById('projectMaterialDropdown');
+    if (!results || results.length === 0) {
+      if (panel) panel.style.display = 'none';
+      if (dropdown) { dropdown.style.display = 'none'; dropdown.innerHTML = ''; }
+      if (wheel) wheel.innerHTML = '';
+      return;
+    }
+    var itemsHtml = results.map(function(m,i){ var desc = m.description ? ('<div class="lookup-desc" style="font-size:12px;color:#999;margin-top:6px;">' + escapeHtml((m.description||'').substring(0,220)) + '</div>') : ''; return '<div class="lookup-item" data-idx="' + i + '" data-id="' + escapeHtml(m.id) + '" role="option" tabindex="-1" style="padding:8px; border-radius:6px; margin-bottom:6px; background:#0b0b0b;">' + '<div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">' + '<div style="font-weight:600; color:#ddd;">' + escapeHtml(m.name) + '</div>' + '<div class="lookup-meta" style="font-size:12px;color:#999;">' + escapeHtml((m.vendor||'').toUpperCase()) + ' • ' + formatCurrency(m.pricePer, m.currency) + '</div>' + '</div>' + desc + '</div>'; }).join('');
+    if (wheel) {
+      wheel.innerHTML = itemsHtml;
+      try { wheel.style.zIndex = 2000; wheel.style.pointerEvents = 'auto'; } catch(e){}
+      if (panel) panel.style.display = 'block';
+      if (!wheel._pickerHandler) {
+        wheel.addEventListener('click', function(ev){ var el = ev.target; while (el && el !== wheel && !el.classList.contains('lookup-item')) el = el.parentNode; if (!el || el === wheel) return; var idx = parseInt(el.getAttribute('data-idx')); if (isNaN(idx)) return; selectProjectMaterial(idx); });
+        wheel.addEventListener('keydown', function(ev){ if (ev.key === 'ArrowDown') { ev.preventDefault(); _projectPickerIndex = Math.min(_projectPickerIndex + 1, _projectPickerResults.length - 1); focusProjectPickerItem(wheel, _projectPickerIndex); } else if (ev.key === 'ArrowUp') { ev.preventDefault(); _projectPickerIndex = Math.max(_projectPickerIndex - 1, 0); focusProjectPickerItem(wheel, _projectPickerIndex); } else if (ev.key === 'Enter') { ev.preventDefault(); if (_projectPickerIndex >= 0) selectProjectMaterial(_projectPickerIndex); } });
+        wheel._pickerHandler = true;
+      }
+      var nodes = wheel.querySelectorAll('.lookup-item');
+      nodes.forEach(function(it,ii){ it.addEventListener('mouseover', function(){ _projectPickerIndex = ii; highlightProjectPicker(ii); }); it.style.cursor = 'pointer'; });
+      try { wheel.focus(); } catch(e){}
+    } else if (dropdown) { dropdown.innerHTML = itemsHtml; dropdown.style.display = 'block'; }
+  }
+
+  function focusProjectPickerItem(wheel, idx) { var nodes = wheel.querySelectorAll('.lookup-item'); nodes.forEach(function(n,i){ n.style.background = (i === idx) ? '#222' : ''; if (i === idx) { try { n.scrollIntoView({ block: 'nearest' }); } catch(e){} } }); }
+  function highlightProjectPicker(idx) { var items = document.querySelectorAll('#projectMaterialDropdown .lookup-item'); items.forEach(function(it,i){ it.style.background = i === idx ? '#222' : ''; }); }
+
+  function selectProjectMaterial(i) { var m = _projectPickerResults[i]; if (!m) return; _projectPickerSelectedId = m.id; _projectPickerIndex = i; // visually highlight
+    var wheel = document.getElementById('projectMaterialLookupWheel'); if (wheel) { var nodes = wheel.querySelectorAll('.lookup-item'); nodes.forEach(function(n,ii){ n.style.border = ii === i ? '1px solid var(--accent-color)' : ''; }); }
+    // Immediately add the selected material to the current project's BOM (on click/enter)
+    try {
+      if (_projectPickerSelectedId) {
+        var vendorSel = document.getElementById('projectPickerVendorSelect');
+        var vendorOverride = vendorSel && vendorSel.value ? vendorSel.value : null;
+        addInventoryToCurrentProject(_projectPickerSelectedId, vendorOverride);
+        closeModal('projectMaterialPickerModal');
+      }
+    } catch (e) { console.warn('selectProjectMaterial add failed', e); }
+  }
+
+  function confirmProjectMaterialPick() {
+    if (!_projectPickerSelectedId) { alert('Please select a material from the list or create a new one.'); return; }
+    try {
+      var vendorSel = document.getElementById('projectPickerVendorSelect');
+      var vendorOverride = vendorSel && vendorSel.value ? vendorSel.value : null;
+      addInventoryToCurrentProject(_projectPickerSelectedId, vendorOverride);
+    } catch(e) { console.warn('confirmProjectMaterialPick failed', e); }
+    closeModal('projectMaterialPickerModal');
+  }
+
+  // wire the search input for the picker
+  try {
+    var projectMaterialSearch = document.getElementById('projectMaterialSearch');
+    if (projectMaterialSearch && !projectMaterialSearch._attached) {
+      projectMaterialSearch.addEventListener('input', function(e){ var q = (e.target.value || '').trim().toLowerCase(); var vendor = e.target.dataset.vendor || null; if (!q) { renderProjectMaterialLookup([]); return; } var results = (appData.materials || []).filter(function(m){ if (!m) return false; if (vendor && m.vendor !== vendor) return false; return (m.name && m.name.toLowerCase().includes(q)) || (m.description && m.description.toLowerCase().includes(q)) || (m.vendor && m.vendor.toLowerCase().includes(q)) || (m.tags && m.tags.join(' ').toLowerCase().includes(q)); }).slice(0,80); renderProjectMaterialLookup(results); });
+      projectMaterialSearch.addEventListener('keydown', function(e){ var panel = document.getElementById('projectMaterialLookupPanel'); if (!panel || panel.style.display === 'none') return; if (e.key === 'ArrowDown') { e.preventDefault(); _projectPickerIndex = Math.min(_projectPickerIndex + 1, _projectPickerResults.length - 1); focusProjectPickerItem(document.getElementById('projectMaterialLookupWheel'), _projectPickerIndex); } else if (e.key === 'ArrowUp') { e.preventDefault(); _projectPickerIndex = Math.max(_projectPickerIndex - 1, 0); focusProjectPickerItem(document.getElementById('projectMaterialLookupWheel'), _projectPickerIndex); } else if (e.key === 'Enter') { e.preventDefault(); if (_projectPickerIndex >= 0) selectProjectMaterial(_projectPickerIndex); }
+      });
+      projectMaterialSearch._attached = true;
+    }
+  } catch(e) { console.warn('Failed to attach projectMaterialSearch handlers', e); }
+
+  // Inline quick-create support for the Project Material Picker modal
+  function toggleProjectPickerNewForm(show) {
+    try {
+      var panel = document.getElementById('projectPickerNewForm');
+      var toggleBtn = document.getElementById('projectPickerToggleNewBtn');
+      if (!panel) return;
+      panel.style.display = show ? 'block' : 'none';
+      if (toggleBtn) toggleBtn.textContent = show ? 'Close Quick Create' : '+ New Material';
+      // set vendor field when showing
+      if (show) {
+        var v = _projectPickerCurrentVendor || 'amazon';
+        var vendorField = document.getElementById('pickerNewVendor'); if (vendorField) vendorField.value = v;
+        // prefill pack/currency defaults
+        var cur = document.getElementById('pickerNewCurrency'); if (cur && !cur.value) cur.value = appSettings.currencyDefault || 'USD';
+        // focus name input for faster entry
+        try { var nameEl = document.getElementById('pickerNewName'); if (nameEl) { nameEl.focus(); nameEl.select && nameEl.select(); } } catch(e){}
+      }
+    } catch(e) { console.warn('toggleProjectPickerNewForm failed', e); }
+  }
+
+  function createMaterialFromPicker() {
+    try {
+      var name = (document.getElementById('pickerNewName') && document.getElementById('pickerNewName').value.trim()) || '';
+      if (!name) return alert('Name is required to create a material');
+      var url = (document.getElementById('pickerNewUrl') && document.getElementById('pickerNewUrl').value.trim()) || '';
+      var priceRaw = document.getElementById('pickerNewPrice') ? document.getElementById('pickerNewPrice').value : '';
+      var price = priceRaw === '' ? 0 : parseFloat(priceRaw);
+      var packSize = parseInt(document.getElementById('pickerNewPack') ? document.getElementById('pickerNewPack').value : '') || 1;
+      var currency = document.getElementById('pickerNewCurrency') ? document.getElementById('pickerNewCurrency').value : (appSettings.currencyDefault || 'USD');
+  // prefer the modal-level vendor selector if user chose one, otherwise fallback to inline field
+  var modalVendorSel = document.getElementById('projectPickerVendorSelect');
+  var vendor = (modalVendorSel && modalVendorSel.value) ? modalVendorSel.value : (document.getElementById('pickerNewVendor') ? document.getElementById('pickerNewVendor').value : (_projectPickerCurrentVendor || 'amazon'));
+      // Basic validation: if URL provided ensure valid
+      if (url && !isValidUrl(url)) return alert('Please enter a valid URL (must start with http:// or https://)');
+      // Ensure a project is selected before attempting to add to its BOM
+      if (!appData.currentProjectId) { return alert('No project selected. Open a project before adding materials to its BOM.'); }
+      // Create material object
+      var mat = { id: generateUUID(), name: name, description: '', url: url || '', pricePer: isNaN(price) ? 0 : price, packSize: packSize || 1, vendor: vendor || 'amazon', currency: currency || (appSettings.currencyDefault || 'USD'), tags: [] };
+      appData.materials = appData.materials || [];
+      appData.materials.push(mat);
+      saveData();
+      renderMaterials();
+      // After creating, link it to current project BOM
+      try {
+        var modalVendorSel2 = document.getElementById('projectPickerVendorSelect');
+        var vendorOverride2 = modalVendorSel2 && modalVendorSel2.value ? modalVendorSel2.value : null;
+        addInventoryToCurrentProject(mat.id, vendorOverride2);
+      } catch(e){ console.warn('Failed to add newly created material to BOM', e); }
+      // Close the picker modal and reset quick-create; clear inputs for next use
+      try {
+        toggleProjectPickerNewForm(false);
+        var els = ['pickerNewName','pickerNewUrl','pickerNewPrice','pickerNewPack']; els.forEach(function(id){ var e = document.getElementById(id); if (e) e.value = ''; });
+      } catch(e){}
+      closeModal('projectMaterialPickerModal');
+    } catch(e) { console.warn('createMaterialFromPicker failed', e); alert('Failed to create material'); }
+  }
+
+  // expose for legacy inline use
+  try { window.showProjectMaterialPicker = showProjectMaterialPicker; window.confirmProjectMaterialPick = confirmProjectMaterialPick; window.toggleProjectPickerNewForm = toggleProjectPickerNewForm; window.createMaterialFromPicker = createMaterialFromPicker; window.selectProjectMaterial = selectProjectMaterial; } catch(e) {}
 
   function refreshInventoryThumbnails() {
     // Reuse embedMissingProjectThumbnails for projects and run similar for materials
@@ -2226,11 +2417,61 @@
   var bomLookupResults = [];
   var bomLookupIndex = -1;
   function renderBomLookupDropdown(results) {
+    bomLookupResults = results || [];
+    bomLookupIndex = -1;
+    var panel = document.getElementById('bomLookupPanel');
+    var wheel = document.getElementById('bomLookupWheel');
     var dropdown = document.getElementById('bomMaterialDropdown');
-    bomLookupResults = results || []; bomLookupIndex = -1;
-    if (!results || results.length === 0) { if (dropdown) { dropdown.style.display = 'none'; dropdown.innerHTML = ''; } return; }
-    dropdown.innerHTML = results.map(function(m,i){ return '<div class="lookup-item" data-idx="' + i + '" onclick="selectBomLookup(' + i + ')"><div>' + escapeHtml(m.name) + '</div><div class="lookup-meta">' + escapeHtml((m.vendor||'').toUpperCase()) + ' • ' + formatCurrency(m.pricePer, m.currency) + '</div></div>'; }).join('');
-    dropdown.style.display = 'block';
+    if (!results || results.length === 0) {
+      if (panel) panel.style.display = 'none';
+      if (dropdown) { dropdown.style.display = 'none'; dropdown.innerHTML = ''; }
+      if (wheel) wheel.innerHTML = '';
+      return;
+    }
+
+    var itemsHtml = results.map(function(m,i){
+      var desc = m.description ? ('<div class="lookup-desc" style="font-size:12px;color:#999;margin-top:6px;">' + escapeHtml((m.description||'').substring(0,220)) + '</div>') : '';
+      return '<div class="lookup-item" data-idx="' + i + '" role="option" tabindex="-1" style="padding:8px; border-radius:6px; margin-bottom:6px; background:#0b0b0b;">' +
+        '<div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">' +
+          '<div style="font-weight:600; color:#ddd;">' + escapeHtml(m.name) + '</div>' +
+          '<div class="lookup-meta" style="font-size:12px;color:#999;">' + escapeHtml((m.vendor||'').toUpperCase()) + ' • ' + formatCurrency(m.pricePer, m.currency) + '</div>' +
+        '</div>' + desc + '</div>';
+    }).join('');
+
+    if (wheel) {
+      wheel.innerHTML = itemsHtml;
+      // ensure the wheel can receive pointer events and appears above overlays
+      try { wheel.style.zIndex = 2000; wheel.style.pointerEvents = 'auto'; } catch(e){}
+      if (panel) panel.style.display = 'block';
+      // Attach delegated click handler once
+      if (!wheel._hasHandler) {
+        wheel.addEventListener('click', function(ev){
+          var el = ev.target;
+          while (el && el !== wheel && !el.classList.contains('lookup-item')) el = el.parentNode;
+          if (!el || el === wheel) return;
+          var idx = el.getAttribute('data-idx'); if (!idx) return; selectBomLookup(parseInt(idx));
+        });
+        wheel.addEventListener('keydown', function(ev){
+          if (ev.key === 'ArrowDown') { ev.preventDefault(); bomLookupIndex = Math.min(bomLookupIndex + 1, bomLookupResults.length - 1); focusLookupItem(wheel, bomLookupIndex); }
+          else if (ev.key === 'ArrowUp') { ev.preventDefault(); bomLookupIndex = Math.max(bomLookupIndex - 1, 0); focusLookupItem(wheel, bomLookupIndex); }
+          else if (ev.key === 'Enter') { ev.preventDefault(); if (bomLookupIndex >= 0) selectBomLookup(bomLookupIndex); }
+        });
+        wheel._hasHandler = true;
+      }
+      // attach per-item hover to set bomLookupIndex
+      var nodes = wheel.querySelectorAll('.lookup-item');
+      nodes.forEach(function(it, ii){ it.addEventListener('mouseover', function(){ bomLookupIndex = ii; highlightBomLookup(ii); }); it.style.cursor = 'pointer'; });
+      // focus the wheel for keyboard navigation
+      try { wheel.focus(); } catch(e){}
+    } else if (dropdown) {
+      dropdown.innerHTML = itemsHtml;
+      dropdown.style.display = 'block';
+    }
+  }
+
+  function focusLookupItem(wheel, idx) {
+    var nodes = wheel.querySelectorAll('.lookup-item');
+    nodes.forEach(function(n,i){ n.style.background = (i === idx) ? '#222' : ''; if (i === idx) { try { n.scrollIntoView({ block: 'nearest' }); } catch(e){} } });
   }
 
   function selectBomLookup(i) {
@@ -2732,7 +2973,8 @@
   'renderGallery','handleGalleryImageAdd','updateGalleryImageNote','removeStandaloneImage','deleteStandaloneEntry','saveGalleryEntry','removeProjectThumbnailById','removeMaterialThumbnailById','exportGallery','importGallery','handleGalleryImport',
   'triggerGalleryImageSelect',
     'renderProjectTagsUI','addProjectTagFromInput','removeProjectTag','renderProjectLinksUI','addProjectLinkFromInput','removeProjectLink','togglePreviewDetails',
-    'renderProjectCreditsUI','addProjectCreditFromInput','removeProjectCredit','embedMissingProjectThumbnails','embedAllSavedThumbnails','removeProjectThumbnail','removeMaterialThumbnail'
+      'renderProjectCreditsUI','addProjectCreditFromInput','removeProjectCredit','embedMissingProjectThumbnails','embedAllSavedThumbnails','removeProjectThumbnail','removeMaterialThumbnail',
+    'toggleProjectPickerNewForm','createMaterialFromPicker','selectProjectMaterial','showProjectMaterialPicker','confirmProjectMaterialPick','addMaterialToCurrentProject'
   ];
   // ensure printed parts handlers are exported
   ['renderPrintedParts','showAddPrintedPartModal','editPrintedPart','savePrintedPart','deletePrintedPart','renderPrintedPartsInventory','addPrintedPartToBOM'].forEach(function(name){ exported.push(name); });
