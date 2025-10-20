@@ -401,6 +401,8 @@
       }
     });
 
+    // (Removed duplicate delegated handler to avoid double-processing of remove actions.)
+
     // Defensive bindings for thumbnail file inputs and labels
     try {
       // Ensure change listeners are attached for project thumbnail
@@ -528,12 +530,12 @@
           while (btn && btn !== projectNeedsList && btn.tagName !== 'BUTTON') btn = btn.parentNode;
           if (!btn || btn === projectNeedsList) return;
           var action = btn.getAttribute('data-action');
+          try { console.log('[DEBUG][projectNeedsHandler] clicked', { action: action, id: btn.getAttribute('data-id'), vendor: btn.getAttribute('data-vendor'), vendorIndex: btn.getAttribute('data-vendor-index') }); } catch(e){}
           if (!action) return;
           if (action === 'addToBOM') {
             var id = btn.getAttribute('data-id'); if (!id) return; try { window.addInventoryToCurrentProject(id); } catch(err){ console.warn('addInventoryToCurrentProject failed', err); }
           } else if (action === 'removeFromBOM') {
-            var vendor = btn.getAttribute('data-vendor'); var vIdx = parseInt(btn.getAttribute('data-vendor-index')); if (!vendor || isNaN(vIdx)) return; try { 
-              var proj = (appData.projects || []).find(function(p){ return p.id === appData.currentProjectId; }); if (!proj || !proj.boms || !proj.boms[vendor]) return; proj.boms[vendor].splice(vIdx,1); saveData(); try { renderBOMs(); } catch(e){} try { renderInventory(); } catch(e){} try { renderMaterials(); } catch(e){} } catch(err){ console.warn('removeFromBOM failed', err); }
+            var vendor = btn.getAttribute('data-vendor'); var vIdx = parseInt(btn.getAttribute('data-vendor-index')); if (!vendor || isNaN(vIdx)) return; try { deleteBOMItem(vendor, vIdx); } catch(err){ console.warn('removeFromBOM failed', err); }
           } else if (action === 'prefillMissing') {
             var idx = parseInt(btn.getAttribute('data-idx')); if (isNaN(idx)) return; try { window.prefillMaterialFromMissing(idx); } catch(err){ console.warn('prefillMaterialFromMissing failed', err); }
           } else if (action === 'showSettings') {
@@ -819,7 +821,11 @@
   }
 
   function saveData() {
-    try { setStorageItem('boManagerData', JSON.stringify(appData)); } catch (e) { console.error('Failed to save data', e); }
+    try {
+      console.debug('[TRACE][saveData] serializing appData: projects=', (appData.projects||[]).length, 'materials=', (appData.materials||[]).length);
+      setStorageItem('boManagerData', JSON.stringify(appData));
+      console.debug('[TRACE][saveData] saveData completed');
+    } catch (e) { console.error('Failed to save data', e); }
   }
 
   function loadData() {
@@ -843,7 +849,7 @@
   function getStorageItem(preferredKey) {
     try {
       // if preferred exists, return it
-      var v = localStorage.getItem(preferredKey); if (v !== null) return v;
+      var v = localStorage.getItem(preferredKey); if (v !== null) { console.debug('[TRACE][getStorageItem] key=', preferredKey, 'found'); return v; }
       // fallback: map boManagerData -> bomPlannerData, boManagerSources -> bomPlannerSources, etc.
       var fallbackMap = { 'boManagerData':'bomPlannerData', 'boManagerSources':'bomPlannerSources', 'boManagerImageSettings':'bomPlannerImageSettings', 'boManagerEmbedSettings':'bomPlannerEmbedSettings' };
       var fb = fallbackMap[preferredKey]; if (fb) { var fv = localStorage.getItem(fb); if (fv !== null) return fv; }
@@ -855,6 +861,7 @@
     try {
       // always write to preferredKey (boManager*). Keep old keys untouched.
       localStorage.setItem(preferredKey, value);
+      try { console.debug('[TRACE][setStorageItem] key=', preferredKey, 'len=', value ? value.length : 0); } catch(e){}
     } catch (e) { console.warn('setStorageItem failed for', preferredKey, e); }
   }
 
@@ -1499,6 +1506,7 @@
 
   // Materials
   function renderMaterials() {
+    try { console.debug('[TRACE][renderMaterials] entry projects=', (appData.projects||[]).length, 'materials=', (appData.materials||[]).length, 'currentProjectId=', appData.currentProjectId); } catch(e){}
     var searchTerm = (document.getElementById('materialSearch') && document.getElementById('materialSearch').value.toLowerCase()) || '';
     var vendorFilter = (document.getElementById('materialVendorFilter') && document.getElementById('materialVendorFilter').value) || '';
     var filteredMaterials = (appData.materials || []).filter(function(m){
@@ -1518,9 +1526,9 @@
   var desc = m.description ? '<div style="font-size:13px; color:#ccc; margin-top:6px;">' + escapeHtml(m.description) + '</div>' : '';
       return '<div class="material-item" style="padding:10px; border-bottom:1px solid #222;">' +
         '<div style="display:flex; align-items:center; gap:8px;"><div>' + thumb + '</div><div style="flex:1">' +
-  '<div style="font-weight:500;margin-bottom:4px;">' + escapeHtml(m.name) + ' ' + packBadge + includedBadge + '</div>' +
-  '<div style="font-size:12px;color:#999;margin-bottom:8px;">' + (m.vendor && m.vendor.toUpperCase ? escapeHtml(m.vendor.toUpperCase()) : '') + ' • ' + formatCurrency(m.pricePer, m.currency) + '</div>' +
-        desc + tagsHtml +
+          '<div style="font-weight:500;margin-bottom:4px;">' + escapeHtml(m.name) + ' ' + packBadge + includedBadge + '</div>' +
+          '<div style="font-size:12px;color:#999;margin-bottom:8px;">' + (m.vendor && m.vendor.toUpperCase ? escapeHtml(m.vendor.toUpperCase()) : '') + ' • ' + formatCurrency(m.pricePer, m.currency) + '</div>' +
+          desc + tagsHtml +
         '</div></div>' +
         '<div style="display:flex; gap:8px; margin-top:8px; justify-content:flex-end;">' +
           '<button class="btn btn-secondary btn-small" onclick="editMaterial(\'' + m.id + '\')">Edit</button>' +
@@ -1534,8 +1542,13 @@
   // Helper: add a material to the currently selected project's BOM under its vendor
   function addMaterialToCurrentProject(materialId) {
     try {
+      try { console.log('[DEBUG][addMaterialToCurrentProject] called with', materialId); } catch(e){}
       if (!materialId) return alert('No material specified');
-      addInventoryToCurrentProject(materialId);
+      try { var proj = (appData.projects||[]).find(function(p){ return p.id === appData.currentProjectId; }); console.debug('[TRACE][addMaterialToCurrentProject] before-add project snapshot:', proj ? { id: proj.id, name: proj.name, bomsCounts: Object.keys(proj.boms||{}).reduce(function(acc,k){ acc[k]=(proj.boms[k]||[]).length; return acc; },{}) } : null); } catch(e){}
+  // When adding explicitly from the Materials list, prefer to create a new BOM entry
+  // instead of linking to an existing one (user expectation: add multiple items)
+  addInventoryToCurrentProject(materialId, null, true);
+      try { var proj2 = (appData.projects||[]).find(function(p){ return p.id === appData.currentProjectId; }); console.debug('[TRACE][addMaterialToCurrentProject] after-add project snapshot:', proj2 ? { id: proj2.id, name: proj2.name, bomsCounts: Object.keys(proj2.boms||{}).reduce(function(acc,k){ acc[k]=(proj2.boms[k]||[]).length; return acc; },{}) } : null); } catch(e){}
     } catch (e) { console.warn('addMaterialToCurrentProject failed', e); alert('Failed to add material to project'); }
   }
 
@@ -1848,6 +1861,7 @@
 
   // Inventory view: render materials with editable on-hand counts and Add to BOM
   function renderInventory() {
+    try { console.debug('[TRACE][renderInventory] entry projects=', (appData.projects||[]).length, 'materials=', (appData.materials||[]).length, 'currentProjectId=', appData.currentProjectId); } catch(e){}
     var q = (document.getElementById('inventorySearch') && document.getElementById('inventorySearch').value.trim().toLowerCase()) || '';
     var list = document.getElementById('inventoryList'); if (!list) return;
     var projectNeedsEl = document.getElementById('projectNeedsList'); if (!projectNeedsEl) return;
@@ -1950,7 +1964,7 @@
           '<div style="display:flex; align-items:center; gap:8px; flex:1;">' + thumb + '<div style="flex:1;">' + '<div style="font-weight:600;">' + escapeHtml(m.name) + packBadgeInv + includedBadgeInv + '</div>' + '<div style="font-size:12px;color:#999;">' + escapeHtml((m.vendor||'').toUpperCase()) + ' • ' + formatCurrency(m.pricePer, m.currency) + '</div>' + kitDetailsHtml + '</div></div>' +
           '<div style="display:flex; gap:8px; align-items:center;">' +
             '<input type="number" min="0" value="' + onHand + '" style="width:84px; padding:6px; background:#0f0f0f; border:1px solid #222; color:#fff;" onchange="updateInventoryOnHand(\'' + m.id + '\', this.value)">' +
-            '<button class="btn btn-small" onclick="window.addInventoryToCurrentProject(\'' + m.id + '\')">Add to BOM</button>' + kitToggle +
+            '<button class="btn btn-small" onclick="window.addInventoryToCurrentProject(\'' + m.id + '\', null, true)">Add to BOM</button>' + kitToggle +
           '</div></div>';
       }).join('');
     }
@@ -2427,13 +2441,15 @@
   function updateInventoryOnHand(id, val) {
     var n = parseInt(val); if (isNaN(n) || n < 0) n = 0; var mat = (appData.materials || []).find(function(x){ return x.id === id; }); if (!mat) return; mat.onHand = n; saveData(); renderInventory(); renderMaterials(); }
 
-  function addInventoryToCurrentProject(materialId, vendorOverride) {
+  function addInventoryToCurrentProject(materialId, vendorOverride, forceCreateNew) {
     try {
-      try { console.debug('[DEBUG][addInventoryToCurrentProject] called with', materialId); } catch(e){}
+      try { console.log('[DEBUG][addInventoryToCurrentProject] called with', materialId); } catch(e){}
+      try { console.log('[DEBUG][addInventoryToCurrentProject] currentProjectId=', appData.currentProjectId); } catch(e){}
+      try { var projBefore = (appData.projects||[]).find(function(p){ return p.id === appData.currentProjectId; }); console.log('[DEBUG][addInventoryToCurrentProject] project before (shallow):', projBefore ? { id: projBefore.id, name: projBefore.name, boms: Object.keys(projBefore.boms||{}).reduce(function(acc,k){ acc[k]=(projBefore.boms[k]||[]).length; return acc; },{}) } : null); } catch(e){}
       var mat = (appData.materials || []).find(function(m){ return m.id === materialId; });
-      if (!mat) { console.warn('Material not found', materialId); return; }
-      if (!appData.currentProjectId) { console.warn('Select a project first'); return; }
-      var project = (appData.projects || []).find(function(p){ return p.id === appData.currentProjectId; }); if (!project) { console.warn('Project not found'); return; }
+      if (!mat) { try { console.warn('Material not found', materialId); } catch(e){}; return alert('Material not found in the library'); }
+      if (!appData.currentProjectId) { try { console.warn('Select a project first'); } catch(e){}; return alert('No project selected. Open or select a project before adding items to its BOM.'); }
+      var project = (appData.projects || []).find(function(p){ return p.id === appData.currentProjectId; }); if (!project) { try { console.warn('Project not found'); } catch(e){}; return alert('Selected project could not be found'); }
 
       // If this material is a kit/pack with components, expand automatically:
   if (mat.isPack && Array.isArray(mat.components) && mat.components.length > 0) {
@@ -2476,24 +2492,29 @@
       project.boms = project.boms || {};
       var linked = false;
       try {
-        var vendors = ['amazon','aliexpress','temu','mcmaster'];
-        for (var vi = 0; vi < vendors.length; vi++) {
-          var v = vendors[vi];
-          var list = project.boms[v] || [];
-          for (var bi = 0; bi < list.length; bi++) {
-            var bomEntry = list[bi];
-            if (!bomEntry) continue;
-            var matches = false;
-            if (bomEntry.url && mat.url && bomEntry.url === mat.url) matches = true;
-            if (!matches && bomEntry.name && mat.name && bomEntry.name.toLowerCase() === mat.name.toLowerCase()) matches = true;
-            if (matches) {
-              // link this canonical BOM entry to the material instead of creating a duplicate
-              project.boms[v][bi].__linkedMaterialId = mat.id;
-              linked = true;
-              break;
+        // Only attempt to link to an existing BOM entry when not explicitly forcing creation of a new item.
+        if (!forceCreateNew) {
+          var vendors = ['amazon','aliexpress','temu','mcmaster'];
+          for (var vi = 0; vi < vendors.length; vi++) {
+            var v = vendors[vi];
+            var list = project.boms[v] || [];
+            try { console.log('[TRACE] checking vendor', v, 'existingCount=', list.length); } catch(e){}
+            for (var bi = 0; bi < list.length; bi++) {
+              var bomEntry = list[bi];
+              if (!bomEntry) continue;
+              var matches = false;
+              if (bomEntry.url && mat.url && bomEntry.url === mat.url) matches = true;
+              if (!matches && bomEntry.name && mat.name && bomEntry.name.toLowerCase() === mat.name.toLowerCase()) matches = true;
+              if (matches) {
+                // link this canonical BOM entry to the material instead of creating a duplicate
+                project.boms[v][bi].__linkedMaterialId = mat.id;
+                linked = true;
+                try { console.log('[TRACE][addInventory] linked existing entry vendor=', v, 'index=', bi, 'materialId=', mat.id); } catch(e){}
+                break;
+              }
             }
+            if (linked) break;
           }
-          if (linked) break;
         }
   } catch (e) { console.warn('link search failed', e); }
 
@@ -2509,12 +2530,28 @@
       // No existing BOM entry matched — create a new BOM item and mark it linked
     var item = { name: mat.name, url: mat.url || '', quantity: 1, pricePer: mat.pricePer || 0, packSize: mat.packSize || 1, onHand: mat.onHand || 0, status: 'pending', __linkedMaterialId: mat.id };
     project.boms[vendor] = project.boms[vendor] || [];
+    try { console.log('[TRACE][addInventory] creating new BOM item vendor=', vendor, 'beforeCount=', project.boms[vendor].length); } catch(e){}
     project.boms[vendor].push(item);
+    try { console.log('[TRACE][addInventory] pushed new BOM item vendor=', vendor, 'afterCount=', project.boms[vendor].length, 'item=', item); } catch(e){}
   // Defensive: explicitly mark the canonical BOM entry we just added
   try { project.boms[vendor][project.boms[vendor].length - 1].__linkedMaterialId = mat.id; } catch(e){}
       try { console.debug('[DEBUG][addInventoryToCurrentProject] created new BOM entry', { vendor: vendor, item: item, projectId: project.id }); } catch(e){}
       saveData();
   try { console.debug('[DEBUG][addInventoryToCurrentProject] project.boms after create', JSON.parse(JSON.stringify(project.boms || {}))); } catch(e){}
+      try {
+        var _saved = getStorageItem('boManagerData');
+        if (_saved) {
+          try {
+            var _parsed = JSON.parse(_saved);
+            var _sp = null;
+            if (_parsed && Array.isArray(_parsed.projects)) {
+              for (var _i = 0; _i < _parsed.projects.length; _i++) { if (_parsed.projects[_i] && _parsed.projects[_i].id === appData.currentProjectId) { _sp = _parsed.projects[_i]; break; } }
+            }
+            try { console.log('[TRACE][storageSnapshot] savedProject (shallow):', _sp ? { id: _sp.id, name: _sp.name, boms: (_sp.boms ? Object.keys(_sp.boms).reduce(function(acc,k){ acc[k]=(_sp.boms[k]||[]).length; return acc; },{}) : {}) } : null); } catch(e){}
+          } catch(e) { console.warn('Failed to parse saved snapshot', e); }
+        } else { try { console.log('[TRACE][storageSnapshot] no saved data found'); } catch(e){} }
+      } catch(e) { console.warn('storage snapshot failed', e); }
+  try { var projAfter = (appData.projects||[]).find(function(p){ return p.id === appData.currentProjectId; }); console.log('[DEBUG][addInventoryToCurrentProject] project after (shallow):', projAfter ? { id: projAfter.id, name: projAfter.name, boms: Object.keys(projAfter.boms||{}).reduce(function(acc,k){ acc[k]=(projAfter.boms[k]||[]).length; return acc; },{}) } : null); } catch(e){}
       try { renderBOMs(); } catch(e){}
       try { renderInventory(); } catch(e){}
       try { renderMaterials(); } catch(e){}
@@ -2560,12 +2597,14 @@
       return;
     }
     var itemsHtml = results.map(function(m,i){ var desc = m.description ? ('<div class="lookup-desc" style="font-size:12px;color:#999;margin-top:6px;">' + escapeHtml((m.description||'').substring(0,220)) + '</div>') : ''; return '<div class="lookup-item" data-idx="' + i + '" data-id="' + escapeHtml(m.id) + '" role="option" tabindex="-1" style="padding:8px; border-radius:6px; margin-bottom:6px; background:#0b0b0b;">' + '<div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">' + '<div style="font-weight:600; color:#ddd;">' + escapeHtml(m.name) + '</div>' + '<div class="lookup-meta" style="font-size:12px;color:#999;">' + escapeHtml((m.vendor||'').toUpperCase()) + ' • ' + formatCurrency(m.pricePer, m.currency) + '</div>' + '</div>' + desc + '</div>'; }).join('');
-    if (wheel) {
+      if (wheel) {
       wheel.innerHTML = itemsHtml;
       try { wheel.style.zIndex = 2000; wheel.style.pointerEvents = 'auto'; } catch(e){}
       if (panel) panel.style.display = 'block';
       if (!wheel._pickerHandler) {
+        // single-click selects (but does NOT auto-add or close); double-click confirms/adds
         wheel.addEventListener('click', function(ev){ var el = ev.target; while (el && el !== wheel && !el.classList.contains('lookup-item')) el = el.parentNode; if (!el || el === wheel) return; var idx = parseInt(el.getAttribute('data-idx')); if (isNaN(idx)) return; selectProjectMaterial(idx); });
+        wheel.addEventListener('dblclick', function(ev){ var el = ev.target; while (el && el !== wheel && !el.classList.contains('lookup-item')) el = el.parentNode; if (!el || el === wheel) return; var idx = parseInt(el.getAttribute('data-idx')); if (isNaN(idx)) return; try { _projectPickerSelectedId = _projectPickerResults[idx] && _projectPickerResults[idx].id; var vendorSel = document.getElementById('projectPickerVendorSelect'); var vendorOverride = vendorSel && vendorSel.value ? vendorSel.value : null; addInventoryToCurrentProject(_projectPickerSelectedId, vendorOverride); closeModal('projectMaterialPickerModal'); } catch(e) { console.warn('dblclick add failed', e); } });
         wheel.addEventListener('keydown', function(ev){ if (ev.key === 'ArrowDown') { ev.preventDefault(); _projectPickerIndex = Math.min(_projectPickerIndex + 1, _projectPickerResults.length - 1); focusProjectPickerItem(wheel, _projectPickerIndex); } else if (ev.key === 'ArrowUp') { ev.preventDefault(); _projectPickerIndex = Math.max(_projectPickerIndex - 1, 0); focusProjectPickerItem(wheel, _projectPickerIndex); } else if (ev.key === 'Enter') { ev.preventDefault(); if (_projectPickerIndex >= 0) selectProjectMaterial(_projectPickerIndex); } });
         wheel._pickerHandler = true;
       }
@@ -2580,15 +2619,8 @@
 
   function selectProjectMaterial(i) { var m = _projectPickerResults[i]; if (!m) return; _projectPickerSelectedId = m.id; _projectPickerIndex = i; // visually highlight
     var wheel = document.getElementById('projectMaterialLookupWheel'); if (wheel) { var nodes = wheel.querySelectorAll('.lookup-item'); nodes.forEach(function(n,ii){ n.style.border = ii === i ? '1px solid var(--accent-color)' : ''; }); }
-    // Immediately add the selected material to the current project's BOM (on click/enter)
-    try {
-      if (_projectPickerSelectedId) {
-        var vendorSel = document.getElementById('projectPickerVendorSelect');
-        var vendorOverride = vendorSel && vendorSel.value ? vendorSel.value : null;
-        addInventoryToCurrentProject(_projectPickerSelectedId, vendorOverride);
-        closeModal('projectMaterialPickerModal');
-      }
-    } catch (e) { console.warn('selectProjectMaterial add failed', e); }
+    // Single-click now only selects. User must click Confirm/Add to finalize.
+    try { console.log('[DEBUG][selectProjectMaterial] selected id=', _projectPickerSelectedId); } catch(e){}
   }
 
   function confirmProjectMaterialPick() {
@@ -2724,12 +2756,18 @@
   function renderBOMs() {
     var project = (appData.projects || []).find(function(p){ return p.id === appData.currentProjectId; });
     if (!project) return;
+    try { console.debug('[TRACE][renderBOMs] rendering project', project.id, project.name, 'bomsCounts:', { amazon:(project.boms && project.boms.amazon? project.boms.amazon.length:0), aliexpress:(project.boms && project.boms.aliexpress? project.boms.aliexpress.length:0), temu:(project.boms && project.boms.temu? project.boms.temu.length:0), mcmaster:(project.boms && project.boms.mcmaster? project.boms.mcmaster.length:0) }); } catch(e){}
     ['amazon','aliexpress','temu','mcmaster'].forEach(function(v){ renderBOM(v, project.boms[v] || []); });
   }
 
   function renderBOM(vendor, items) {
     var container = document.getElementById(vendor + 'BOM');
     if (!container) return;
+    try { console.log('[TRACE][renderBOM] vendor=', vendor, 'itemsLength=', Array.isArray(items) ? items.length : 'not-array'); } catch(e){}
+    try {
+      var projForRender = (appData.projects || []).find(function(p){ return p.id === appData.currentProjectId; });
+      if (projForRender) console.debug('[TRACE][renderBOM] projectBeingRendered', { id: projForRender.id, name: projForRender.name });
+    } catch(e){}
     var subtotal = 0;
     var rows = items.map(function(item, index){
       var packMultiplier = Math.ceil((item.quantity || 0) / (item.packSize || 1));
@@ -2744,7 +2782,19 @@
           if (linked && linked.description) desc = linked.description;
         }
       } catch(e) { desc = ''; }
-      var itemNameHtml = item.url ? ('<a href="' + escapeHtml(item.url) + '" target="_blank" style="color:var(--accent-color);">' + escapeHtml(item.name) + '</a>') : escapeHtml(item.name);
+      // prefer showing the linked material's name/url when available so users can see the link immediately
+      var displayName = item.name;
+      var displayUrl = item.url || '';
+      try {
+        if (item.__linkedMaterialId) {
+          var linked = (appData.materials || []).find(function(m){ return m && m.id === item.__linkedMaterialId; });
+          if (linked) {
+            displayName = linked.name || displayName;
+            displayUrl = displayUrl || (linked.url || '');
+          }
+        }
+      } catch(e){}
+      var itemNameHtml = displayUrl ? ('<a href="' + escapeHtml(displayUrl) + '" target="_blank" style="color:var(--accent-color);">' + escapeHtml(displayName) + '</a>') : escapeHtml(displayName);
       var descHtml = desc ? ('<div style="font-size:12px;color:#999;margin-top:6px;">' + escapeHtml(desc) + '</div>') : '';
       return '<tr>' +
         '<td>' + itemNameHtml + '</td>' +
@@ -2898,7 +2948,27 @@
     };
   }
 
-  function deleteBOMItem(vendor, index) { if (!confirm('Remove this item from the BOM?')) return; var project = (appData.projects || []).find(function(p){ return p.id === appData.currentProjectId; }); if (!project) return; project.boms[vendor].splice(index,1); saveData(); renderBOM(vendor, project.boms[vendor]); }
+  function deleteBOMItem(vendor, index) {
+    try {
+      if (!confirm('Remove this item from the BOM?')) return;
+      var project = (appData.projects || []).find(function(p){ return p.id === appData.currentProjectId; });
+      if (!project) return;
+      project.boms = project.boms || {};
+      var arr = project.boms[vendor] || [];
+      var idx = Number(index);
+      try { console.debug('[TRACE][deleteBOMItem] vendor=', vendor, 'requestedIndex=', index, 'coerced=', idx, 'currentLength=', arr.length); } catch(e){}
+      if (isNaN(idx) || idx < 0 || idx >= arr.length) { console.warn('[WARN][deleteBOMItem] invalid index - aborting', { vendor: vendor, index: index, coerced: idx, length: arr.length }); return; }
+  arr.splice(idx, 1);
+  try { console.debug('[TRACE][deleteBOMItem] after splice newLength=', arr.length); } catch(e){}
+  project.boms[vendor] = arr;
+  saveData();
+  // Re-render all dependent UI so changes appear immediately across views
+  try { renderBOMs(); } catch(e) {}
+  try { renderInventory(); } catch(e) {}
+  try { renderMaterials(); } catch(e) {}
+  try { renderProjects(); } catch(e) {}
+    } catch (e) { console.warn('deleteBOMItem failed', e); }
+  }
 
   function updateShipping(vendor) { var project = (appData.projects || []).find(function(p){ return p.id === appData.currentProjectId; }); if (!project) return; project.shipping = project.shipping || {}; var v = parseFloat(document.getElementById(vendor + 'Shipping') ? document.getElementById(vendor + 'Shipping').value : '') || 0; project.shipping[vendor] = v; saveData(); renderBOM(vendor, project.boms[vendor]); }
 
