@@ -59,6 +59,13 @@
     loadEmbedSettings();
     loadSources();
   loadAppSettings();
+  // Seed inventory panel state from persisted settings early in init to avoid an initial UI flash
+  try {
+    if (appSettings && appSettings.inventoryPanelState && typeof appSettings.inventoryPanelState === 'object') {
+      _inventoryPanelState.project = !!appSettings.inventoryPanelState.project;
+      _inventoryPanelState.full = !!appSettings.inventoryPanelState.full;
+    }
+  } catch (e) { /* ignore */ }
   // Apply saved accent color (if any) at startup so UI uses the user's chosen color
   try { loadAccentColor(); } catch (e) { /* ignore if not available yet */ }
   // ensure inventoryBackups array exists
@@ -68,6 +75,8 @@
     setupEventListeners();
     renderProjects();
     renderMaterials();
+  // Ensure panels reflect persisted collapsed/expanded state before first paint
+  try { renderInventoryPanelState(); } catch(e) {}
   // Update embed UI state to reflect saved settings (enable/disable embed buttons, state messages)
   try { updateEmbedUIState(); } catch(e) {}
 
@@ -2075,20 +2084,30 @@
           else if (linkedMat && linkedMat.description) needDesc = linkedMat.description;
         } catch(e) { needDesc = ''; }
 
-        if (linkedMat) {
-          matchedHtml = '<div style="font-size:13px; color:#ddd;">Found in Materials: <strong>' + escapeHtml(linkedMat.name) + '</strong> <button class="btn btn-small" style="margin-left:8px;" data-action="removeFromBOM" data-vendor="' + escapeHtml(item._vendor || item.vendor || '') + '" data-vendor-index="' + (item._vendorIndex != null ? item._vendorIndex : idx) + '">Remove from BOM</button></div>';
-        } else {
-          // Fallback: attempt to match by url/name/vendor to show Add option
-          var match = (appData.materials || []).find(function(m){ if (!m) return false; if (item.url && m.url && m.url === item.url) return true; if (m.name && item.name && m.name.toLowerCase() === item.name.toLowerCase() && m.vendor === (item.vendor || item._vendor)) return true; return false; });
-          if (!match && canonicalEntry && canonicalEntry.__linkedMaterialId) {
-            match = (appData.materials || []).find(function(m){ return m && m.id === canonicalEntry.__linkedMaterialId; });
-          }
-          if (match) {
-            matchedHtml = '<div style="font-size:13px; color:#ddd;">Found in Materials: <strong>' + escapeHtml(match.name) + '</strong> <button class="btn btn-small" style="margin-left:8px;" data-action="addToBOM" data-id="' + escapeHtml(match.id) + '">Add to BOM</button></div>';
-          } else {
-            matchedHtml = '<div style="font-size:13px; color:#f88;">Missing in Materials. <button class="btn btn-small" data-action="prefillMissing" data-idx="' + idx + '">Add as Material</button> <button class="btn btn-secondary btn-small" data-action="showSettings" style="margin-left:8px;">Check Sources / Imports</button></div>';
-          }
-        }
+            // Determine if there is a matching material (either linked or by heuristics)
+            var match = null;
+            try {
+              match = linkedMat || (appData.materials || []).find(function(m){ if (!m) return false; if (item.url && m.url && m.url === item.url) return true; if (m.name && item.name && m.name.toLowerCase() === item.name.toLowerCase() && m.vendor === (item.vendor || item._vendor)) return true; return false; });
+            } catch(e) { match = linkedMat || null; }
+
+            // Compute on-hand vs needed and render a concise status/delta
+            var needQty = (item && item.quantity) ? Number(item.quantity) : 1;
+            var haveQty = match ? (typeof match.onHand === 'number' ? match.onHand : 0) : 0;
+            var delta = haveQty - needQty;
+            if (match) {
+              // Matched material exists in inventory
+              if (delta >= 0) {
+                matchedHtml = '<div style="font-size:13px; color:#9fe08a;">Sufficient — have <strong>' + haveQty + '</strong>' + (delta > 0 ? (' (+' + delta + ' extra)') : '') + '</div>' +
+                              '<div style="margin-top:6px;"><strong>' + escapeHtml(match.name) + '</strong> <button class="btn btn-small" style="margin-left:8px;" data-action="removeFromBOM" data-vendor="' + escapeHtml(item._vendor || item.vendor || '') + '" data-vendor-index="' + (item._vendorIndex != null ? item._vendorIndex : idx) + '">Remove</button></div>';
+              } else {
+                // Not enough on-hand
+                matchedHtml = '<div style="font-size:13px; color:#f88;">Missing <strong>' + Math.abs(delta) + '</strong> (have ' + haveQty + ', need ' + needQty + ')</div>' +
+                              '<div style="margin-top:6px;"><strong>' + escapeHtml(match.name) + '</strong></div>';
+              }
+            } else {
+              // No matching material found — offer to create or check sources
+              matchedHtml = '<div style="font-size:13px; color:#f88;">Missing in Materials. <button class="btn btn-small" data-action="prefillMissing" data-idx="' + idx + '">Add as Material</button> <button class="btn btn-secondary btn-small" data-action="showSettings" style="margin-left:8px;">Check Sources / Imports</button></div>';
+            }
         return '<div style="padding:8px; border-bottom:1px solid #222; display:flex; justify-content:space-between; align-items:center;">' +
           '<div style="flex:1;">' + '<div style="font-weight:600;">' + escapeHtml(item.name) + '</div>' + (needDesc ? ('<div style="font-size:12px;color:#999;margin-top:6px;">' + escapeHtml(needDesc) + '</div>') : '') + '<div style="font-size:12px;color:#999; margin-top:6px;">Vendor: ' + escapeHtml((item.vendor||item._vendor||'').toUpperCase()) + ' • Qty: ' + (item.quantity || 1) + '</div>' + '</div>' +
           '<div style="margin-left:12px; text-align:right;">' + matchedHtml + '</div>' +
@@ -2096,7 +2115,7 @@
       }).join('');
     }
 
-    // render local inventory below (filter by search q)
+  // render local inventory below (filter by search q)
     var mats = (appData.materials || []).filter(function(m){ if (!m) return false; if (!q) return true; return (m.name && m.name.toLowerCase().includes(q)) || (m.vendor && m.vendor.toLowerCase().includes(q)) || (m.tags && m.tags.join(' ').toLowerCase().includes(q)); });
     if (!mats || mats.length === 0) { list.innerHTML = '<div style="color:#666; text-align:center; padding:20px;">No inventory items</div>'; } else {
       list.innerHTML = mats.map(function(m){
@@ -2135,7 +2154,64 @@
           '</div></div>';
       }).join('');
     }
+    // Update panel counts and ensure collapsed state UI matches
+    try {
+      var projCountEl = document.getElementById('inventoryProjectCount'); if (projCountEl) projCountEl.textContent = '(' + (needs ? needs.length : 0) + ' items)';
+      var fullCountEl = document.getElementById('inventoryFullCount'); if (fullCountEl) fullCountEl.textContent = '(' + ((appData.materials||[]).length) + ' items)';
+      // ensure panel bodies follow aria-expanded state
+      renderInventoryPanelState();
+    } catch(e) { console.warn('renderInventory: failed to update panel state', e); }
   }
+
+  // Panel collapse state stored in-memory per session. Keys: 'project' | 'full'
+  // false = expanded, true = collapsed
+  var _inventoryPanelState = { project: false, full: false };
+  // Note: panel state is seeded during init() to avoid UI flash; keep _inventoryPanelState authoritative here.
+  function toggleInventorySection(which) {
+    try {
+      if (!which) return;
+      _inventoryPanelState[which] = !_inventoryPanelState[which];
+      renderInventoryPanelState();
+      // Persist choice to appSettings for next session optionally
+      try { appSettings.inventoryPanelState = appSettings.inventoryPanelState || {}; appSettings.inventoryPanelState[which] = _inventoryPanelState[which]; saveAppSettings(); } catch(e){}
+    } catch(e) { console.warn('toggleInventorySection failed', e); }
+  }
+
+  function renderInventoryPanelState() {
+    try {
+      // Project panel
+      var projBody = document.getElementById('inventoryPanelProjectBody'); var projToggle = document.getElementById('inventoryToggleProject'); if (projBody && projToggle) {
+        // Use only the in-memory panel state as the single source of truth here.
+        // appSettings is used only at init() to seed `_inventoryPanelState` to avoid UI flash.
+        var collapsed = (_inventoryPanelState.project === true);
+        projBody.classList.toggle('collapsed', !!collapsed);
+        if (collapsed) {
+          projToggle.textContent = 'Expand';
+          projToggle.setAttribute('aria-expanded','false');
+          projToggle.setAttribute('aria-label', 'Expand Project BOM panel');
+        } else {
+          projToggle.textContent = 'Collapse';
+          projToggle.setAttribute('aria-expanded','true');
+          projToggle.setAttribute('aria-label', 'Collapse Project BOM panel');
+        }
+      }
+      // Full panel
+      var fullBody = document.getElementById('inventoryPanelFullBody'); var fullToggle = document.getElementById('inventoryToggleFull'); if (fullBody && fullToggle) {
+        var collapsedF = (_inventoryPanelState.full === true);
+        fullBody.classList.toggle('collapsed', !!collapsedF);
+        if (collapsedF) {
+          fullToggle.textContent = 'Expand';
+          fullToggle.setAttribute('aria-expanded','false');
+          fullToggle.setAttribute('aria-label', 'Expand All Materials panel');
+        } else {
+          fullToggle.textContent = 'Collapse';
+          fullToggle.setAttribute('aria-expanded','true');
+          fullToggle.setAttribute('aria-label', 'Collapse All Materials panel');
+        }
+      }
+    } catch(e) { console.warn('renderInventoryPanelState failed', e); }
+  }
+  try { if (typeof window !== 'undefined') { window.toggleInventorySection = toggleInventorySection; window.renderInventoryPanelState = renderInventoryPanelState; } } catch(e) {}
 
   // Gallery view: show project/material thumbnails and a standalone gallery of images stored in appData.gallery
   function renderGallery() {

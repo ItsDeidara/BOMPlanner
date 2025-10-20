@@ -396,3 +396,29 @@
 .toast.success { border-left: 4px solid #4CAF50; }
 .toast.warn { border-left: 4px solid #FFB300; }
 .toast.error { border-left: 4px solid #E53935; }
+
+/* Inventory collapsible panels */
+.inventory-panel { background: #080808; border: 1px solid #171717; border-radius: 6px; margin-bottom: 12px; overflow: hidden; }
+.inventory-panel-header { display:flex; justify-content:space-between; align-items:center; padding:10px 12px; border-bottom:1px solid #111; }
+.inventory-panel-body { padding: 10px 12px; }
+.inventory-toggle-btn { background: transparent; border: 1px solid #222; color: #ddd; padding:6px 8px; border-radius:6px; cursor:pointer; font-size:13px; }
+.inventory-toggle-btn[aria-expanded="true"] { background: var(--accent-color); color: #fff; border-color: rgba(255,255,255,0.05); }
+.inventory-toggle-btn:hover { opacity:0.95; }
+/* Smooth collapse transition: animate max-height and opacity. Use overflow:hidden to clip contents. */
+.inventory-panel-body {
+  transition: max-height 240ms ease, opacity 180ms ease, padding 180ms ease;
+  max-height: 2000px; /* large default to accommodate content */
+  opacity: 1;
+  overflow: hidden;
+}
+.inventory-panel-body.collapsed {
+  max-height: 0px;
+  opacity: 0;
+  padding-top: 0px;
+  padding-bottom: 0px;
+}
+/* Better keyboard focus styles */
+.inventory-toggle-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(255,255,255,0.06), 0 0 0 6px rgba(0,0,0,0.35);
+}
