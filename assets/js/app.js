@@ -1403,36 +1403,36 @@
   }
 
   function exportAllMaterials() {
-    if (!appData.materials || appData.materials.length === 0) { alert('No materials to export'); return; }
-    var sanitized = (appData.materials || []).map(function(m){ return sanitizeMaterial(m); });
-    var data = JSON.stringify(sanitized, null, 2);
-    var blob = new Blob([data], { type: 'application/json' });
-    var url = URL.createObjectURL(blob); var a = document.createElement('a'); a.href = url; a.download = 'BOManager_AllMaterials_' + Date.now() + '.json'; a.click(); URL.revokeObjectURL(url);
-  }
-
-  // Create a sanitized export-friendly representation of a project
-  function sanitizeProject(proj) {
-    if (!proj || typeof proj !== 'object') return proj;
-    var out = {};
-    // Keep a stable id when exporting so imports that check ids can use it; but avoid functions
-  out.id = proj.id || generateUUID();
-    out.name = proj.name || '';
-    // Ensure metadata exists and include credits explicitly when present
-    out.metadata = proj.metadata || {};
-    if (Array.isArray(out.metadata.credits)) {
-      // copy credits to avoid accidental mutation
-      out.metadata.credits = out.metadata.credits.map(function(c){ return { name: c.name || '', url: c.url || null }; });
+    var material = (appData.materials || []).find(function(m){ return m.id === id; }); if (!material) return;
+    editingMaterialId = id;
+    // If material is a pack/kit, open the Kit modal prefilled
+    if (material.isPack) {
+      var setKit = function(id, val){ var el = document.getElementById(id); if (el) el.value = val; };
+      setKit('materialKitName', material.name || '');
+      setKit('materialKitVendor', material.vendor || 'amazon');
+      setKit('materialKitCurrency', material.currency || 'USD');
+      setKit('materialKitPackSizeOption', material.packSize || material.packSizeOption || '');
+      // populate kit components
+      tempMaterialComponents = Array.isArray(material.components) ? material.components.slice() : [];
+      populateKitComponentSelect();
+      var compList = document.getElementById('materialComponentsList'); if (compList) compList.innerHTML = (tempMaterialComponents || []).map(function(c,i){ return '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;"><div>' + escapeHtml(c.name) + ' x' + (c.quantity || 1) + '</div><div><button class="btn btn-small" onclick="removeMaterialComponent(' + i + ')">Remove</button></div></div>'; }).join('');
+      // open kit modal
+      openModal('materialKitModal');
+      return;
     }
-    // Preserve tags and links if present
-    if (out.metadata.tags && !Array.isArray(out.metadata.tags)) out.metadata.tags = [];
-    if (out.metadata.links && !Array.isArray(out.metadata.links)) out.metadata.links = [];
-    // BOMs: preserve vendor arrays; include known vendors
-    out.boms = out.boms || {};
-    ['amazon','aliexpress','temu','mcmaster'].forEach(function(v){ out.boms[v] = (proj.boms && Array.isArray(proj.boms[v])) ? proj.boms[v].map(function(it){ return Object.assign({}, it); }) : []; });
-    // shipping, notes, thumbnail, currency
-    out.shipping = proj.shipping || {};
-    out.notes = Array.isArray(proj.notes) ? proj.notes.map(function(n){ return Object.assign({}, n); }) : [];
-    out.currency = proj.currency || (appSettings.currencyDefault || 'USD');
+
+    // Non-pack: open the simplified Single modal prefilled
+    var setSingle = function(id, val){ var el = document.getElementById(id); if (el) el.value = val; };
+    setSingle('materialSingleName', material.name || '');
+    setSingle('materialSingleDescription', material.description || '');
+    setSingle('materialSingleUrl', material.url || '');
+    setSingle('materialSinglePrice', material.pricePer != null ? material.pricePer : '');
+    setSingle('materialSingleCurrency', material.currency || 'USD');
+    setSingle('materialSingleVendor', material.vendor || 'amazon');
+    setSingle('materialSingleTagsInput', Array.isArray(material.tags) ? material.tags.join(',') : '');
+    // thumbnail preview for single modal
+    try { var preview = document.getElementById('materialSingleThumbnailPreview'); if (preview) { if (material.thumbnailDataUrl) { preview.src = material.thumbnailDataUrl; preview.style.display = 'block'; } else { preview.src = ''; preview.style.display = 'none'; } } } catch(e){}
+    openModal('materialSingleModal');
     // Prefer explicit embedded thumbnailDataUrl. If missing, include metadata.icon/metadata.image only when
     // they are already embedded data URLs (do not auto-fetch remote URLs to avoid outbound network calls).
     if (proj.thumbnailDataUrl) {
@@ -1533,7 +1533,7 @@
         '<div style="display:flex; gap:8px; margin-top:8px; justify-content:flex-end;">' +
           '<button class="btn btn-secondary btn-small" onclick="editMaterial(\'' + m.id + '\')">Edit</button>' +
           '<button class="btn btn-secondary btn-small" onclick="deleteMaterial(\'' + m.id + '\')">Delete</button>' +
-          (m.url ? '<button class="btn btn-secondary btn-small" onclick="window.open(\'' + escapeHtml(m.url) + '\', \"_blank\")">View</button>' : '') +
+          (m.url ? '<button class="btn btn-secondary btn-small" onclick="openMaterialUrlById(\'' + m.id + '\')">View</button>' : '') +
           '<button class="btn btn-small" onclick="addMaterialToCurrentProject(\'' + m.id + '\')">Add to project</button>' +
         '</div></div>';
     }).join('');
@@ -1557,23 +1557,121 @@
   function filterMaterials(){ renderMaterials(); }
 
   function showNewMaterialModal(){
+    // Legacy entry point for creating a new material should now present the options-first modal
     editingMaterialId = null;
-    var fields = ['materialName','materialDescription','materialUrl','materialPrice','materialPackSize'];
-    fields.forEach(function(id){ var el = document.getElementById(id); if (el) el.value = ''; });
-    var vendorEl = document.getElementById('materialVendor'); if (vendorEl) vendorEl.value = 'amazon';
-    var currencyEl = document.getElementById('materialCurrency'); if (currencyEl) currencyEl.value = 'USD';
-  var isPackEl = document.getElementById('materialIsPack'); if (isPackEl) isPackEl.checked = false;
-  var packOpts = document.getElementById('materialPackOptions'); if (packOpts) packOpts.style.display = 'none';
-  // ensure UI state for disabled/enabled fields is consistent
-  try { updateMaterialPackUI(); } catch(e) {}
-    var packSizeOptionEl = document.getElementById('materialPackSizeOption'); if (packSizeOptionEl) packSizeOptionEl.value = '';
-    // reset kit builder state
+    try { showNewMaterialOptionsModal(); } catch(e) { openModal('materialOptionsModal'); }
+  }
+
+  // New options-first modal handlers: present choice then open the appropriate material modal state
+  function showNewMaterialOptionsModal() {
+    openModal('materialOptionsModal');
+  }
+
+  function showNewMaterialSingle() {
+    try { closeModal('materialOptionsModal'); } catch(e){}
+    editingMaterialId = null;
+    // reset single-form fields
+    ['materialSingleName','materialSingleDescription','materialSingleUrl','materialSinglePrice','materialSingleTagsInput'].forEach(function(id){ var el=document.getElementById(id); if(el) el.value=''; });
+    var vendorEl = document.getElementById('materialSingleVendor'); if (vendorEl) vendorEl.value = 'amazon';
+    var currencyEl = document.getElementById('materialSingleCurrency'); if (currencyEl) currencyEl.value = 'USD';
+    // assertions: ensure pack UI not visible
+    try { console.assert(!document.getElementById('materialPackOptions') || document.getElementById('materialPackOptions').style.display === 'none', 'Pack options should be hidden when opening Single modal'); } catch(e){}
+    openModal('materialSingleModal');
+  }
+
+  function showNewMaterialKit() {
+    try { closeModal('materialOptionsModal'); } catch(e){}
+    editingMaterialId = null;
+    // clear kit modal fields
+    ['materialKitName','materialKitPackSizeOption'].forEach(function(id){ var el=document.getElementById(id); if(el) el.value=''; });
+    var vendorEl = document.getElementById('materialKitVendor'); if (vendorEl) vendorEl.value = 'amazon';
+    var currencyEl = document.getElementById('materialKitCurrency'); if (currencyEl) currencyEl.value = 'USD';
     tempMaterialComponents = [];
     populateKitComponentSelect();
     var compList = document.getElementById('materialComponentsList'); if (compList) compList.innerHTML = '';
-    // reset Included-with-printer fields and populate printer/project options
-    try { populateIncludedWithOptions(); var incChk = document.getElementById('materialIncluded'); if (incChk) { incChk.checked = false; } var incOpts = document.getElementById('materialIncludedOptions'); if (incOpts) incOpts.style.display = 'none'; var incWith = document.getElementById('materialIncludedWith'); if (incWith) incWith.value = ''; var incQty = document.getElementById('materialIncludedQty'); if (incQty) incQty.value = 1; } catch(e){}
-    openModal('materialModal');
+    // assertions: ensure kit builder exists
+    try { console.assert(document.getElementById('materialKitBuilder'), 'Kit builder modal must exist'); } catch(e){}
+    openModal('materialKitModal');
+  }
+
+  // Save handlers for the simplified modals
+  function saveSingleMaterial() {
+    try { console.debug('[DEBUG] saveSingleMaterial invoked'); } catch(e){}
+    var payload = (function(){ return {
+      name: (document.getElementById('materialSingleName') && document.getElementById('materialSingleName').value.trim()) || '',
+      description: document.getElementById('materialSingleDescription') ? document.getElementById('materialSingleDescription').value.trim() : '',
+      url: (document.getElementById('materialSingleUrl') && document.getElementById('materialSingleUrl').value.trim()) || '',
+      pricePer: parseFloat(document.getElementById('materialSinglePrice') ? document.getElementById('materialSinglePrice').value : NaN),
+      currency: document.getElementById('materialSingleCurrency') ? document.getElementById('materialSingleCurrency').value : 'USD',
+      vendor: document.getElementById('materialSingleVendor') ? document.getElementById('materialSingleVendor').value : 'amazon',
+      tags: (document.getElementById('materialSingleTagsInput') && document.getElementById('materialSingleTagsInput').value.trim()) ? document.getElementById('materialSingleTagsInput').value.trim().split(',').map(function(s){return s.trim();}).filter(function(s){return s;}) : [],
+      isPack: false
+    }; })();
+    try {
+      console.debug('[DEBUG] saveSingleMaterial payload', payload, 'editingMaterialId=', editingMaterialId);
+      createOrUpdateMaterial(payload, editingMaterialId || null);
+      closeModal('materialSingleModal');
+    } catch (e) { console.error('saveSingleMaterial failed', e); alert('Failed to save material: ' + (e && e.message ? e.message : String(e))); }
+  }
+
+  function saveKitMaterial() {
+    try { console.debug('[DEBUG] saveKitMaterial invoked'); } catch(e){}
+    var payload = (function(){ return {
+      name: (document.getElementById('materialKitName') && document.getElementById('materialKitName').value.trim()) || '',
+      vendor: document.getElementById('materialKitVendor') ? document.getElementById('materialKitVendor').value : 'amazon',
+      currency: document.getElementById('materialKitCurrency') ? document.getElementById('materialKitCurrency').value : 'USD',
+      packSize: parseInt(document.getElementById('materialKitPackSizeOption') ? document.getElementById('materialKitPackSizeOption').value : '') || 1,
+      components: (tempMaterialComponents || []).map(function(c){ return { name: c.name, quantity: c.quantity || 1, url: c.url || null, pricePer: c.pricePer || 0 }; }),
+      isPack: true
+    }; })();
+    try {
+      console.debug('[DEBUG] saveKitMaterial payload', payload, 'editingMaterialId=', editingMaterialId);
+      createOrUpdateMaterial(payload, editingMaterialId || null);
+      closeModal('materialKitModal');
+    } catch (e) { console.error('saveKitMaterial failed', e); alert('Failed to save kit: ' + (e && e.message ? e.message : String(e))); }
+  }
+
+  // Export these handlers for inline onclicks and the save handlers
+  try { if (typeof window !== 'undefined') { window.showNewMaterialOptionsModal = showNewMaterialOptionsModal; window.showNewMaterialSingle = showNewMaterialSingle; window.showNewMaterialKit = showNewMaterialKit; window.saveSingleMaterial = saveSingleMaterial; window.saveKitMaterial = saveKitMaterial; window.showToast = showToast; } } catch(e) {}
+
+  // Simple on-screen toast helper (creates container if missing). Uses CSS classes and includes a close button.
+  function showToast(message, opts) {
+    opts = opts || {};
+    var duration = typeof opts.duration === 'number' ? opts.duration : 3000;
+    var type = opts.type || 'success'; // 'success' | 'warn' | 'error' (maps to CSS)
+    try {
+      var container = document.getElementById('toastContainer');
+      if (!container) {
+        container = document.createElement('div');
+        container.id = 'toastContainer';
+        container.className = 'toast-container';
+        document.body.appendChild(container);
+      }
+      var el = document.createElement('div');
+      el.className = 'toast ' + (type ? type : '');
+
+      var msgSpan = document.createElement('div');
+      msgSpan.className = 'toast-message';
+      msgSpan.textContent = message || '';
+      el.appendChild(msgSpan);
+
+      var closeBtn = document.createElement('button');
+      closeBtn.type = 'button';
+      closeBtn.className = 'toast-close';
+      closeBtn.setAttribute('aria-label', 'Dismiss');
+      closeBtn.innerHTML = '&times;';
+      closeBtn.addEventListener('click', function(){ try { if (el && el.parentNode) { el.classList.remove('show'); setTimeout(function(){ try { if (el && el.parentNode) el.parentNode.removeChild(el); } catch(e){} }, 200); } } catch(e){} });
+      el.appendChild(closeBtn);
+
+      container.appendChild(el);
+      // Allow CSS transition to pick up
+      requestAnimationFrame(function(){ try { el.classList.add('show'); } catch(e){} });
+
+      // Auto-dismiss unless duration is 0 or negative
+      if (duration > 0) {
+        setTimeout(function(){ try { if (el) { el.classList.remove('show'); setTimeout(function(){ try { if (el && el.parentNode) el.parentNode.removeChild(el); } catch(e){} }, 220); } } catch(e){} }, duration);
+      }
+    } catch (e) { try { console.warn('showToast failed', e); } catch (ex) {} }
   }
 
   function editMaterial(id) {
@@ -1610,49 +1708,118 @@
   }
 
   function saveMaterial() {
-    _debugSaveAttempt('saveMaterial:start');
-    var name = (document.getElementById('materialName') && document.getElementById('materialName').value.trim()) || '';
-    var isIncluded = !!(document.getElementById('materialIncluded') && document.getElementById('materialIncluded').checked);
-    var url = (document.getElementById('materialUrl') && document.getElementById('materialUrl').value.trim()) || '';
-    var price = parseFloat(document.getElementById('materialPrice') ? document.getElementById('materialPrice').value : NaN);
-    // Validation: if included, only name is required (and included qty). Otherwise require name, url, price
-    if (!name) { alert('Name is required'); return; }
-    if (isIncluded) {
-      // included materials don't require URL/price
-      var incWith = document.getElementById('materialIncludedWith') ? document.getElementById('materialIncludedWith').value : '';
-      var incQty = parseInt(document.getElementById('materialIncludedQty') ? document.getElementById('materialIncludedQty').value : '') || 1;
-    } else {
-      if (!url || isNaN(price)) { alert('Name, URL, and Price are required'); return; }
-      if (!isValidUrl(url)) { alert('Please enter a valid URL (must start with http:// or https://)'); return; }
+    // Consolidate saving logic into helper
+    var collectFromForm = function(type){
+      // type: 'full' (original modal), 'single', 'kit'
+      if (type === 'single') {
+        return {
+          name: (document.getElementById('materialSingleName') && document.getElementById('materialSingleName').value.trim()) || '',
+          description: document.getElementById('materialSingleDescription') ? document.getElementById('materialSingleDescription').value.trim() : '',
+          url: (document.getElementById('materialSingleUrl') && document.getElementById('materialSingleUrl').value.trim()) || '',
+          pricePer: parseFloat(document.getElementById('materialSinglePrice') ? document.getElementById('materialSinglePrice').value : NaN),
+          currency: document.getElementById('materialSingleCurrency') ? document.getElementById('materialSingleCurrency').value : 'USD',
+          vendor: document.getElementById('materialSingleVendor') ? document.getElementById('materialSingleVendor').value : 'amazon',
+          tags: (document.getElementById('materialSingleTagsInput') && document.getElementById('materialSingleTagsInput').value.trim()) ? document.getElementById('materialSingleTagsInput').value.trim().split(',').map(function(s){return s.trim();}).filter(function(s){return s;}) : []
+        };
+      } else if (type === 'kit') {
+        return {
+          name: (document.getElementById('materialKitName') && document.getElementById('materialKitName').value.trim()) || '',
+          vendor: document.getElementById('materialKitVendor') ? document.getElementById('materialKitVendor').value : 'amazon',
+          currency: document.getElementById('materialKitCurrency') ? document.getElementById('materialKitCurrency').value : 'USD',
+          packSize: parseInt(document.getElementById('materialKitPackSizeOption') ? document.getElementById('materialKitPackSizeOption').value : '') || 1,
+          components: (tempMaterialComponents || []).map(function(c){ return { name: c.name, quantity: c.quantity || 1, url: c.url || null, pricePer: c.pricePer || 0 }; })
+        };
+      } else {
+        // full modal
+        var name = (document.getElementById('materialName') && document.getElementById('materialName').value.trim()) || '';
+        var isIncluded = !!(document.getElementById('materialIncluded') && document.getElementById('materialIncluded').checked);
+        var url = (document.getElementById('materialUrl') && document.getElementById('materialUrl').value.trim()) || '';
+        var price = parseFloat(document.getElementById('materialPrice') ? document.getElementById('materialPrice').value : NaN);
+        var vendor = document.getElementById('materialVendor') ? document.getElementById('materialVendor').value : 'amazon';
+        var currency = document.getElementById('materialCurrency') ? document.getElementById('materialCurrency').value : 'USD';
+        var isPack = !!(document.getElementById('materialIsPack') && document.getElementById('materialIsPack').checked);
+        var packSizeOptionRaw = document.getElementById('materialPackSizeOption') ? document.getElementById('materialPackSizeOption').value : '';
+        var packSizeOption = parseInt(packSizeOptionRaw) || null;
+        var singlePackSize = parseInt(document.getElementById('materialPackSize') ? document.getElementById('materialPackSize').value : '') || 1;
+        var tagsInput = (document.getElementById('materialTagsInput') && document.getElementById('materialTagsInput').value.trim()) || '';
+        var tags = tagsInput ? tagsInput.split(',').map(function(s){ return s.trim(); }).filter(function(s){ return s; }) : [];
+        var mat = { name: name, description: document.getElementById('materialDescription') ? document.getElementById('materialDescription').value.trim() : '', url: url, pricePer: price, currency: currency, packSize: isPack ? (packSizeOption || singlePackSize || 1) : (singlePackSize || 1), vendor: vendor, isPack: isPack, packSizeOption: isPack ? (packSizeOption || singlePackSize || 1) : null, tags: tags, isIncluded: isIncluded };
+        if (isIncluded) { mat.includedWith = document.getElementById('materialIncludedWith') ? document.getElementById('materialIncludedWith').value : ''; mat.includedQty = parseInt(document.getElementById('materialIncludedQty') ? document.getElementById('materialIncludedQty').value : '') || 1; } else { mat.includedWith = null; mat.includedQty = null; }
+        if (mat.isPack && tempMaterialComponents && tempMaterialComponents.length) mat.components = tempMaterialComponents.map(function(c){ return { name: c.name, quantity: c.quantity || 1, url: c.url || null, pricePer: c.pricePer || 0 }; });
+        return mat;
+      }
+    };
+
+    // Now, delegate to createOrUpdateMaterial for the full modal case
+    var payload = collectFromForm('full');
+    createOrUpdateMaterial(payload, editingMaterialId);
+    closeModal('materialModal');
+  }
+
+  // Top-level create/update helper so the focused single/kit save handlers can call it
+  function createOrUpdateMaterial(obj, editingId) {
+    try { console.debug('[DEBUG] createOrUpdateMaterial called', obj, 'editingId=', editingId); } catch(e){}
+    if (!obj || !obj.name) return alert('Name is required');
+    // For non-pack items, URL and price are optional to support creating parts for kits.
+    // If a URL is provided, validate it; if a price is provided, coerce to number; otherwise default pricePer to 0.
+    if (!obj.isPack) {
+      if (obj.url) {
+        try { if (!/^[a-zA-Z]+:\/\//.test(obj.url)) { obj.url = 'https://' + obj.url; } } catch(e){}
+        if (!isValidUrl(obj.url)) return alert('Please enter a valid URL');
+      }
+      if (typeof obj.pricePer === 'number') {
+        if (isNaN(obj.pricePer)) obj.pricePer = 0;
+      } else {
+        // try to coerce if possible
+        try { var p = parseFloat(obj.pricePer); obj.pricePer = isNaN(p) ? 0 : p; } catch(e) { obj.pricePer = 0; }
+      }
     }
-    var vendor = document.getElementById('materialVendor') ? document.getElementById('materialVendor').value : 'amazon';
-    var currency = document.getElementById('materialCurrency') ? document.getElementById('materialCurrency').value : 'USD';
-    var isPack = !!(document.getElementById('materialIsPack') && document.getElementById('materialIsPack').checked);
-    // For packs, prefer the dedicated pack size option field. The top-level materialPackSize is considered legacy and disabled when pack-mode is active.
-    var packSizeOptionRaw = document.getElementById('materialPackSizeOption') ? document.getElementById('materialPackSizeOption').value : '';
-    var packSizeOption = parseInt(packSizeOptionRaw) || null;
-    var singlePackSize = parseInt(document.getElementById('materialPackSize') ? document.getElementById('materialPackSize').value : '') || 1;
-    var duplicate = (appData.materials || []).find(function(m){ return m.id !== editingMaterialId && m.name === name && m.vendor === vendor && m.url === url; });
+    // Dup check: avoid same name+vendor+url duplicates
+    var duplicate = (appData.materials || []).find(function(m){
+      if (m.id === editingId) return false;
+      if (m.name !== obj.name) return false;
+      if (m.vendor !== obj.vendor) return false;
+      // If both have URLs, compare them. If neither has a URL, treat same name+vendor as duplicate.
+      if (m.url && obj.url) return m.url === obj.url;
+      if (!m.url && !obj.url) return true;
+      return false;
+    });
     if (duplicate) { alert('A material with this name, vendor, and URL already exists'); return; }
-    // collect tags input if present
-    var tagsInput = (document.getElementById('materialTagsInput') && document.getElementById('materialTagsInput').value.trim()) || '';
-    var tags = tagsInput ? tagsInput.split(',').map(function(s){ return s.trim(); }).filter(function(s){ return s; }) : [];
-    // Interpret pricePer: if material is a pack, pricePer represents the price for the pack (not per-item). Keep property name pricePer but document behavior in README.
-    var materialData = { name: name, description: document.getElementById('materialDescription') ? document.getElementById('materialDescription').value.trim() : '', url: url, pricePer: price, currency: currency, packSize: isPack ? (packSizeOption || singlePackSize || 1) : (singlePackSize || 1), vendor: vendor, isPack: isPack, packSizeOption: isPack ? (packSizeOption || singlePackSize || 1) : null, tags: tags, isIncluded: isIncluded };
-    if (isIncluded) {
-      materialData.includedWith = document.getElementById('materialIncludedWith') ? document.getElementById('materialIncludedWith').value : '';
-      materialData.includedQty = parseInt(document.getElementById('materialIncludedQty') ? document.getElementById('materialIncludedQty').value : '') || 1;
-    } else {
-      materialData.includedWith = null; materialData.includedQty = null;
+    var created = false;
+    try {
+      if (editingId) {
+        var existing = (appData.materials || []).find(function(m){ return m.id === editingId; }); if (existing) Object.assign(existing, obj);
+      } else {
+        obj.id = generateUUID(); appData.materials = appData.materials || []; appData.materials.push(obj); created = true;
+      }
+      saveData(); renderMaterials();
+      try { showToast((created ? 'Created' : 'Updated') + ' material "' + (obj.name || '') + '"'); } catch(e){}
+      console.debug('[DEBUG] createOrUpdateMaterial completed, created=', created, 'totalMaterials=', (appData.materials||[]).length);
+      // If this creation was initiated from a BOM row, link the newly created material to that BOM entry
+      try {
+        var pending = (typeof window !== 'undefined' && window._pendingLinkFromBOM) ? window._pendingLinkFromBOM : null;
+        if (created && pending && pending.projectId && (typeof pending.vendor === 'string') && (typeof pending.index !== 'undefined')) {
+          var proj = (appData.projects || []).find(function(p){ return p.id === pending.projectId; });
+          if (proj) {
+            proj.boms = proj.boms || {};
+            proj.boms[pending.vendor] = proj.boms[pending.vendor] || [];
+            var idx = Number(pending.index);
+            if (!isNaN(idx) && idx >= 0 && idx < proj.boms[pending.vendor].length) {
+              proj.boms[pending.vendor][idx].__linkedMaterialId = obj.id;
+              saveData();
+              try { renderBOMs(); } catch(e){}
+              try { renderMaterials(); } catch(e){}
+              try { showToast('Linked BOM item to new material "' + (obj.name || '') + '"'); } catch(e){}
+            }
+          }
+          // clear pending marker
+          try { delete window._pendingLinkFromBOM; } catch(e) { window._pendingLinkFromBOM = null; }
+        }
+      } catch(e) { console.warn('Link-after-create failed', e); }
+    } catch (e) {
+      console.error('createOrUpdateMaterial failed during persistence', e);
+      alert('Failed to save material: ' + (e && e.message ? e.message : String(e)));
     }
-    // attach thumbnail if preview exists
-    var matThumb = (document.getElementById('materialThumbnailPreview') && document.getElementById('materialThumbnailPreview').src) || null;
-    if (matThumb) materialData.thumbnailDataUrl = matThumb;
-  // attach kit components when saving a pack/kit (store quantities and optional URLs/prices)
-  if (isPack && tempMaterialComponents && tempMaterialComponents.length) materialData.components = tempMaterialComponents.map(function(c){ return { name: c.name, quantity: c.quantity || 1, url: c.url || null, pricePer: c.pricePer || 0 }; });
-    if (editingMaterialId) { var existing = (appData.materials || []).find(function(m){ return m.id === editingMaterialId; }); if (existing) Object.assign(existing, materialData); }
-    else { materialData.id = generateUUID(); appData.materials = appData.materials || []; appData.materials.push(materialData); }
-    saveData(); renderMaterials(); closeModal('materialModal');
   }
 
   // Toggle disabling unrelated fields when Included-with-printer is checked
@@ -2234,6 +2401,26 @@
 
   try { if (typeof window !== 'undefined') { window.openFullscreenImage = openFullscreenImage; window.closeFullscreenImage = closeFullscreenImage; window.navigateFullscreen = navigateFullscreen; } } catch(e) {}
 
+    // Safe helper to open a material's URL by id. Used by sidebar View buttons to avoid inline-quoted URLs.
+    function openMaterialUrlById(materialId) {
+      try {
+        if (!materialId) return;
+        var mat = (appData.materials || []).find(function(m){ return m && m.id === materialId; });
+        if (!mat) return;
+        if (!mat.url) return alert('No URL available for this material');
+        if (!isValidUrl(mat.url)) {
+          // try to coerce
+          var tryUrl = mat.url;
+          if (!/^[a-zA-Z]+:\/\//.test(tryUrl)) tryUrl = 'https://' + tryUrl;
+          if (!isValidUrl(tryUrl)) return alert('Material URL appears to be invalid');
+          window.open(tryUrl, '_blank');
+          return;
+        }
+        window.open(mat.url, '_blank');
+      } catch (e) { console.warn('openMaterialUrlById failed', e); }
+    }
+    try { if (typeof window !== 'undefined') { window.openMaterialUrlById = openMaterialUrlById; } } catch(e) {}
+
   // Update gallery entry title (persist immediately)
   function updateGalleryEntryTitle(entryId, title) {
     try {
@@ -2400,9 +2587,9 @@
     var project = (appData.projects || []).find(function(p){ return p.id === appData.currentProjectId; });
     if (!project || !project.boms) { alert('No project selected or no BOM available'); return; }
     var needs = [];
-  ['amazon','aliexpress','temu','mcmaster'].forEach(function(v){ (project.boms[v] || []).forEach(function(item){ var clone = Object.assign({ vendor: v }, item); clone._vendor = v; needs.push(clone); }); });
+  ['amazon','aliexpress','temu','mcmaster'].forEach(function(v){ (project.boms[v] || []).forEach(function(item, vendorIdx){ var clone = Object.assign({ vendor: v }, item); clone._vendor = v; clone._vendorIndex = vendorIdx; needs.push(clone); }); });
     var item = needs[idx]; if (!item) { alert('Item not found'); return; }
-    // prefill material modal fields; set editingMaterialId = null to create a new material
+  // prefill material modal fields; set editingMaterialId = null to create a new material
     editingMaterialId = null;
     var set = function(id, val){ var el = document.getElementById(id); if (el) el.value = val; };
     set('materialName', item.name || '');
@@ -2420,6 +2607,8 @@
     if (!item.url) {
       if (!confirm('This BOM item does not include a product URL. Add to Materials Library anyway? (Consider checking Sources / Imports first)')) return;
     }
+    // mark pending link so createOrUpdateMaterial can attach the BOM entry after creation
+    try { window._pendingLinkFromBOM = { projectId: appData.currentProjectId, vendor: item._vendor || item.vendor || 'amazon', index: (typeof item._vendorIndex !== 'undefined' ? item._vendorIndex : idx) }; } catch(e) { window._pendingLinkFromBOM = { projectId: appData.currentProjectId, vendor: item._vendor || item.vendor || 'amazon', index: (typeof item._vendorIndex !== 'undefined' ? item._vendorIndex : idx) }; }
     openModal('materialModal');
   }
 
@@ -2452,32 +2641,35 @@
       var project = (appData.projects || []).find(function(p){ return p.id === appData.currentProjectId; }); if (!project) { try { console.warn('Project not found'); } catch(e){}; return alert('Selected project could not be found'); }
 
       // If this material is a kit/pack with components, expand automatically:
-  if (mat.isPack && Array.isArray(mat.components) && mat.components.length > 0) {
+      if (mat.isPack && Array.isArray(mat.components) && mat.components.length > 0) {
         // Ensure project.boms exists
         project.boms = project.boms || {};
         var added = 0;
+        // When expanding a kit, do NOT auto-create global materials silently.
+        // Instead: if a matching global material exists, link the BOM entry to it.
+        // If no global match is found, create a project-local BOM entry (no global material created).
         mat.components.forEach(function(comp){
           if (!comp || !comp.name) return;
           // try to find an existing material by URL or name
           var match = null;
           if (comp.url) match = (appData.materials || []).find(function(m){ return m.url && m.url === comp.url; });
           if (!match) match = (appData.materials || []).find(function(m){ return m.name && comp.name && m.name.toLowerCase() === comp.name.toLowerCase(); });
-          // if not found, create a new material entry
-          if (!match) {
-            // create a new material entry for this component
-            var newMat = { id: generateUUID(), name: comp.name, description: comp.description || '', url: comp.url || '', pricePer: parseFloat(comp.pricePer) || 0, packSize: 1, vendor: mat.vendor || 'amazon', currency: mat.currency || 'USD', tags: [], onHand: 0 };
-            appData.materials = appData.materials || [];
-            appData.materials.push(newMat);
-            match = newMat;
-          }
-          // add BOM item for the matched material
-          var vendorForComp = match.vendor || mat.vendor || 'amazon';
+
+          var vendorForComp = (match && match.vendor) || comp.vendor || mat.vendor || 'amazon';
           project.boms[vendorForComp] = project.boms[vendorForComp] || [];
-          var bomItem = { name: match.name, url: match.url || comp.url || '', quantity: comp.quantity || 1, pricePer: match.pricePer || comp.pricePer || 0, packSize: 1, onHand: match.onHand || 0, status: 'pending', __linkedMaterialId: match.id };
-          project.boms[vendorForComp].push(bomItem);
-          // Defensive: ensure the canonical BOM entry we just pushed has the linked marker set (avoid any clone/indexing surprises)
-          try { project.boms[vendorForComp][project.boms[vendorForComp].length - 1].__linkedMaterialId = match.id; } catch(e){}
-          added++;
+
+          if (match) {
+            // Link to the existing global material
+            var bomItem = { name: match.name, url: match.url || comp.url || '', quantity: comp.quantity || 1, pricePer: match.pricePer || comp.pricePer || 0, packSize: 1, onHand: match.onHand || 0, status: 'pending', __linkedMaterialId: match.id };
+            project.boms[vendorForComp].push(bomItem);
+            try { project.boms[vendorForComp][project.boms[vendorForComp].length - 1].__linkedMaterialId = match.id; } catch(e){}
+            added++;
+          } else {
+            // No matching global material: create a project-local BOM item only.
+            var localBom = { name: comp.name, url: comp.url || '', quantity: comp.quantity || 1, pricePer: comp.pricePer || 0, packSize: 1, onHand: comp.onHand || 0, status: 'pending' };
+            project.boms[vendorForComp].push(localBom);
+            added++;
+          }
         });
         saveData();
         try { renderBOMs(); } catch(e){}
@@ -2796,6 +2988,21 @@
       } catch(e){}
       var itemNameHtml = displayUrl ? ('<a href="' + escapeHtml(displayUrl) + '" target="_blank" style="color:var(--accent-color);">' + escapeHtml(displayName) + '</a>') : escapeHtml(displayName);
       var descHtml = desc ? ('<div style="font-size:12px;color:#999;margin-top:6px;">' + escapeHtml(desc) + '</div>') : '';
+      // action buttons: render accessible, styled buttons instead of emoji-only icons
+      var actionHtml = '';
+      try {
+        if (item.__linkedMaterialId) {
+          actionHtml = '<button class="vendor-action-btn vendor-action-link" onclick="(function(id){ try{ editMaterial(id); }catch(e){ console.warn(e); } })(\'' + (item.__linkedMaterialId || '') + '\')" aria-label="Open linked material">Open</button>';
+        } else {
+          // call helper to create a global material from this BOM item when user clicks
+          var projIdForBtn = (appData && appData.currentProjectId) ? appData.currentProjectId : '';
+          actionHtml = "<button class=\"vendor-action-btn vendor-action-add\" onclick=\"createMaterialFromBOM('" + (projIdForBtn || '') + "', '" + vendor + "', " + index + ")\" aria-label=\"Add BOM item to Materials Library\">Add</button>";
+        }
+      } catch(e) { actionHtml = ''; }
+
+      var editBtn = '<button class="vendor-action-btn vendor-action-edit" onclick="editBOMItem(\'' + vendor + '\', ' + index + ')">Edit</button>';
+      var delBtn = '<button class="vendor-action-btn vendor-action-delete" onclick="deleteBOMItem(\'' + vendor + '\', ' + index + ')">Remove</button>';
+
       return '<tr>' +
         '<td>' + itemNameHtml + '</td>' +
   '<td class="description-cell">' + (desc ? ('<div>' + escapeHtml(desc) + '</div>') : '') + '</td>' +
@@ -2805,7 +3012,7 @@
         '<td>' + (item.onHand || 0) + '</td>' +
         '<td><span class="status-badge status-' + (item.status || 'pending') + '">' + (item.status || 'pending') + '</span></td>' +
         '<td>' + (itemTotal.toFixed(2)) + '</td>' +
-        '<td><button class="icon-btn" onclick="editBOMItem(\'' + vendor + '\', ' + index + ')">✏️</button><button class="icon-btn" onclick="deleteBOMItem(\'' + vendor + '\', ' + index + ')">🗑️</button></td>' +
+        '<td>' + actionHtml + editBtn + delBtn + '</td>' +
       '</tr>';
     }).join('');
     var project = (appData.projects || []).find(function(p){ return p.id === appData.currentProjectId; });
@@ -2970,6 +3177,44 @@
     } catch (e) { console.warn('deleteBOMItem failed', e); }
   }
 
+  // Create a global material from a project-local BOM entry and link it
+  function createMaterialFromBOM(projectId, vendor, index) {
+    try {
+      var project = (appData.projects || []).find(function(p){ return p.id === projectId; });
+      if (!project) return alert('Project not found');
+      project.boms = project.boms || {};
+      var list = project.boms[vendor] || [];
+      var idx = Number(index);
+      if (isNaN(idx) || idx < 0 || idx >= list.length) return alert('BOM item not found');
+      var item = list[idx];
+      if (!item) return alert('BOM item not found');
+      // If already linked, inform the user
+      if (item.__linkedMaterialId) { alert('This BOM item is already linked to a material.'); return; }
+      // Prefill the full material modal so the user can review/edit before creating the global material
+      editingMaterialId = null;
+      var set = function(id, val){ var el = document.getElementById(id); if (el) el.value = val; };
+      set('materialName', item.name || '');
+      set('materialDescription', item.description || '');
+      set('materialUrl', item.url || '');
+      set('materialPrice', item.pricePer != null ? item.pricePer : '');
+      set('materialPackSize', item.packSize || '');
+      set('materialVendor', vendor || (item.vendor || 'amazon'));
+      var currencyEl = document.getElementById('materialCurrency'); if (currencyEl) currencyEl.value = item.currency || (appSettings && appSettings.currencyDefault) || 'USD';
+      var isPackEl = document.getElementById('materialIsPack'); if (isPackEl) isPackEl.checked = !!item.isPack;
+      var packOpts = document.getElementById('materialPackOptions'); if (packOpts) packOpts.style.display = item.isPack ? 'block' : 'none';
+      try { updateMaterialPackUI(); } catch(e) {}
+      var packSizeOptionEl = document.getElementById('materialPackSizeOption'); if (packSizeOptionEl) packSizeOptionEl.value = item.packSizeOption || item.packSize || '';
+      // Mark pending link so createOrUpdateMaterial can attach the BOM entry after creation
+      try { window._pendingLinkFromBOM = { projectId: projectId, vendor: vendor, index: idx }; } catch(e) { window._pendingLinkFromBOM = { projectId: projectId, vendor: vendor, index: idx }; }
+      // warn user if URL missing
+      if (!item.url) {
+        // no immediate blocking — allow user to proceed to modal to add details
+      }
+      openModal('materialModal');
+    } catch (e) { console.warn('createMaterialFromBOM failed', e); alert('Failed to open material modal from BOM item'); }
+  }
+  try { if (typeof window !== 'undefined') window.createMaterialFromBOM = createMaterialFromBOM; } catch(e) {}
+
   function updateShipping(vendor) { var project = (appData.projects || []).find(function(p){ return p.id === appData.currentProjectId; }); if (!project) return; project.shipping = project.shipping || {}; var v = parseFloat(document.getElementById(vendor + 'Shipping') ? document.getElementById(vendor + 'Shipping').value : '') || 0; project.shipping[vendor] = v; saveData(); renderBOM(vendor, project.boms[vendor]); }
 
   // Notes
@@ -3067,7 +3312,8 @@
 
   // Utils
   function openModal(id) { var el = document.getElementById(id); if (el) el.classList.add('active'); }
-  function closeModal(id) { var el = document.getElementById(id); if (el) el.classList.remove('active'); if (id === 'bomItemModal' && window._originalSaveBOMItem) { window.saveBOMItem = window._originalSaveBOMItem; delete window._originalSaveBOMItem; } }
+  function closeModal(id) { var el = document.getElementById(id); if (el) el.classList.remove('active'); if (id === 'bomItemModal' && window._originalSaveBOMItem) { window.saveBOMItem = window._originalSaveBOMItem; delete window._originalSaveBOMItem; } if (id === 'materialModal') { try { if (typeof window !== 'undefined') { if (window._pendingLinkFromBOM) { delete window._pendingLinkFromBOM; } } } catch(e) { try { window._pendingLinkFromBOM = null; } catch(e){} } } }
+
   function isValidUrl(str) { try { var u = new URL(str); return u.protocol === 'http:' || u.protocol === 'https:'; } catch(e) { return false; } }
   function escapeHtml(text) { if (text == null) return ''; var div = document.createElement('div'); div.textContent = text; return div.innerHTML; }
   function linkifyText(text) { if (!text) return ''; var urlRegex = /(https?:\/\/[^\s"'<>]+)/g; return text.replace(urlRegex, function(url){ return '<a href="' + url + '" target="_blank" style="color:var(--accent-color);">' + url + '</a>'; }); }
@@ -3411,7 +3657,9 @@
   'triggerGalleryImageSelect',
     'renderProjectTagsUI','addProjectTagFromInput','removeProjectTag','renderProjectLinksUI','addProjectLinkFromInput','removeProjectLink','togglePreviewDetails',
       'renderProjectCreditsUI','addProjectCreditFromInput','removeProjectCredit','embedMissingProjectThumbnails','embedAllSavedThumbnails','removeProjectThumbnail','removeMaterialThumbnail',
-    'toggleProjectPickerNewForm','createMaterialFromPicker','selectProjectMaterial','showProjectMaterialPicker','confirmProjectMaterialPick','addMaterialToCurrentProject'
+    'toggleProjectPickerNewForm','createMaterialFromPicker','selectProjectMaterial','showProjectMaterialPicker','confirmProjectMaterialPick','addMaterialToCurrentProject',
+    'showProjectExportPreview','downloadProjectExportFromPreview',
+    'showNewMaterialOptionsModal','showNewMaterialSingle','showNewMaterialKit','saveSingleMaterial','saveKitMaterial','createOrUpdateMaterial'
   ];
   // ensure printed parts handlers are exported
   ['renderPrintedParts','showAddPrintedPartModal','editPrintedPart','savePrintedPart','deletePrintedPart','renderPrintedPartsInventory','addPrintedPartToBOM'].forEach(function(name){ exported.push(name); });

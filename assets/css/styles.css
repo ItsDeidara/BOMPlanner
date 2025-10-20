@@ -233,6 +233,36 @@
     .note-actions { position:absolute; top:10px; right:10px; display:flex; gap:5px; }
     .icon-btn { background:none; border:none; color:#999; cursor:pointer; font-size:16px; padding:4px; transition:color 0.2s; }
     .icon-btn:hover { color:var(--accent-color); }
+    /* Styled action buttons used in per-vendor BOM rows
+       All action buttons should use the app accent color as background with white text
+       to match other .btn elements in the UI. */
+    .vendor-action-btn {
+      background-color: var(--accent-color);
+      color: #fff;
+      border: none;
+      padding: 8px 10px;
+      margin-right: 8px;
+      border-radius: 6px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: filter 0.12s ease, transform 0.06s ease;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.35);
+    }
+    .vendor-action-btn:hover { filter: brightness(0.88); transform: translateY(-1px); }
+    .vendor-action-btn:active { transform: translateY(0); }
+    .vendor-action-btn:focus { outline: none; box-shadow: 0 0 0 3px rgba(255,255,255,0.04); }
+    /* make variant classes fallback to the same accent style; keep delete slightly emphasized if desired */
+    .vendor-action-btn.vendor-action-add, .vendor-action-btn.vendor-action-edit {
+      background-color: var(--accent-color);
+      color: #fff;
+    }
+    .vendor-action-btn.vendor-action-delete {
+      background-color: var(--accent-color);
+      color: #fff;
+      padding: 4px 6px; /* smaller padding */
+      font-size: 12px;  /* slightly smaller text */
+      margin-right: 6px; /* keep spacing reasonable */
+    }
     .modal { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background-color:rgba(0,0,0,0.8); z-index:1000; align-items:center; justify-content:center; }
     .modal.active { display:flex; }
     .modal-content { background-color:#1E1E1E; border-radius:8px; padding:30px; max-width:600px; width:90%; max-height:90vh; overflow-y:auto; }
@@ -320,3 +350,49 @@
   .fullscreen-modal .fs-note { font-size:14px; color:#CCC; }
   .fullscreen-modal .icon-btn { background:rgba(255,255,255,0.06); color:#fff; border-radius:6px; padding:8px 12px; border:none; cursor:pointer; font-size:16px; }
   .fullscreen-modal .icon-btn:hover { background:rgba(255,255,255,0.12); }
+
+/* Toast notifications */
+.toast-container {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+.toast {
+  background: rgba(0,0,0,0.9);
+  color: #fff;
+  padding: 10px 14px;
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.6);
+  min-width: 180px;
+  max-width: 420px;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+.toast.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+.toast .toast-close {
+  margin-left: auto;
+  background: transparent;
+  border: none;
+  color: #ddd;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px;
+  line-height: 1;
+}
+.toast .toast-close:hover { color: #fff; }
+.toast.success { border-left: 4px solid #4CAF50; }
+.toast.warn { border-left: 4px solid #FFB300; }
+.toast.error { border-left: 4px solid #E53935; }
