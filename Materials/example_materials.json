@@ -1,0 +1,14 @@
+[
+  {
+    "id": "mat_example_001",
+    "name": "PLA Filament - Black (hosted)",
+    "description": "1.75mm PLA filament, 1kg spool",
+    "url": "https://example.com/pla_black",
+    "pricePer": 19.99,
+    "currency": "USD",
+    "vendor": "amazon",
+    "packSize": 1,
+    "tags": ["filament","PLA","black"],
+    "thumbnailDataUrl": null
+  }
+]

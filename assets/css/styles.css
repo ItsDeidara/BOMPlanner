@@ -1,0 +1,290 @@
+
+* {
+    /*
+      Consolidated stylesheet for BOMPlanner
+      Primary accent color is controlled by --accent-color in :root.
+      This file was cleaned to remove malformed fragments and duplicate blocks.
+    */
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    :root {
+      --accent-color: #FF0000;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background-color: #121212;
+      color: #E0E0E0;
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    .sidebar {
+      position: relative; /* allow absolutely positioned children (hamburger) to anchor to sidebar) */
+      width: 290px;
+      background-color: #1E1E1E;
+      border-right: 1px solid #333;
+      display: flex;
+      flex-direction: column;
+      transition: width 0.22s ease, transform 0.3s ease;
+    }
+
+    /* Collapsed sidebar state (narrow strip). Increased slightly to provide a small vertical dock area */
+    .sidebar.collapsed {
+      width: 63px !important; /* 48 + 15px as requested */
+      overflow: visible;
+    }
+    .sidebar.collapsed .sidebar-content {
+      display: none;
+    }
+    .sidebar.collapsed .sidebar-tabs { display:none; }
+    .sidebar.collapsed .sidebar-header { padding-left:10px; padding-right:10px; }
+
+    .sidebar-header {
+      padding: 20px;
+      background-color: var(--accent-color);
+      color: white;
+      font-size: 24px;
+      font-weight: bold;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .menu-toggle {
+      display: none;
+      background: none;
+      border: none;
+      color: white;
+      font-size: 24px;
+      cursor: pointer;
+    }
+
+    .sidebar-tabs {
+      display: flex;
+      background-color: #252525;
+    }
+
+    .sidebar-tab {
+      flex: 1;
+      padding: 12px;
+      background: none;
+      border: none;
+      color: #999;
+      cursor: pointer;
+      font-size: 14px;
+      border-bottom: 2px solid transparent;
+      transition: all 0.2s;
+    }
+
+    .sidebar-tab.active {
+      color: var(--accent-color);
+      border-bottom-color: var(--accent-color);
+    }
+
+    .sidebar-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 15px;
+    }
+
+    .btn {
+      background-color: var(--accent-color);
+      color: white;
+      border: none;
+      padding: 10px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      transition: background-color 0.2s;
+    }
+    .btn:hover { filter: brightness(0.88); }
+  .btn-secondary { background-color: #333; color: #E0E0E0; }
+  .btn-secondary:hover { background-color: #444; }
+  /* Accent-style small button variant (for sidebar actions that should match accent) */
+  .btn-accent { background-color: var(--accent-color); color: #fff; border: none; padding: 8px 12px; border-radius: 6px; }
+  .btn-accent.btn-small { padding:6px 10px; font-size:12px; }
+    .btn-small { padding: 6px 10px; font-size: 12px; }
+
+  /* Settings cog button in sidebar: larger and clearly visible but without the heavy black border */
+  #settingsButton {
+    background: transparent;
+    color: var(--accent-color);
+    border-radius: 10px;
+    padding: 10px 12px;
+    min-width: 44px;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px; /* larger icon/text */
+    border: 1px solid rgba(255,255,255,0.06); /* subtle border to separate from bg */
+    box-shadow: 0 2px 6px rgba(0,0,0,0.45);
+    transition: transform 0.12s ease, background-color 0.12s ease;
+  }
+  #settingsButton:hover { background: rgba(255,255,255,0.03); transform: translateY(-2px); }
+
+  /* When the sidebar is expanded (not collapsed) move the settings button 15px toward the BOManager title.
+     We use a transform so layout doesn't reflow; collapsed state resets the transform. */
+  .sidebar:not(.collapsed) #settingsButton {
+    transform: translateX(-45px); /* moved an extra 30px as requested (previously -15px) */
+  }
+  .sidebar.collapsed #settingsButton {
+    transform: none;
+  }
+
+  /* Removed hamburger button styles (feature disabled).
+     Keep collapsed width and header adjustments minimal to avoid visual breakage. */
+  /* Previously the header span and settings button were hidden when collapsed; keep them visible to avoid missing controls. */
+
+    .project-item, .material-item {
+      padding: 12px;
+      background-color: #252525;
+      border-radius: 4px;
+      margin-bottom: 8px;
+      cursor: pointer;
+      transition: background-color 0.2s;
+      border-left: 3px solid transparent;
+    }
+    .project-item:hover, .material-item:hover { background-color: #2A2A2A; }
+    .project-item.active { border-left-color: var(--accent-color); background-color: #2A2A2A; }
+    .project-name { font-weight: 500; margin-bottom: 4px; }
+    .project-meta { font-size: 12px; color: #999; }
+
+    .main-content { flex: 1; overflow-y: auto; padding: 30px; }
+    /* segmented control for main view tabs (View Project / View Inventory) */
+    .segmented-control {
+      display: inline-flex;
+      background: #151515;
+      border-radius: 8px;
+      padding: 4px;
+      gap: 4px;
+      align-items: center;
+    }
+    .main-tab {
+      background: transparent;
+      border: none;
+      color: #bbb;
+      padding: 8px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      transition: background-color 0.18s ease, color 0.18s ease, transform 0.18s ease;
+    }
+    .main-tab:hover { background: rgba(255,255,255,0.02); color: #fff; transform: translateY(-1px); }
+    .main-tab.active {
+      background: linear-gradient(90deg, rgba(0,0,0,0.08), rgba(255,255,255,0.02));
+      color: var(--accent-color);
+      box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+    }
+    .content-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:25px; }
+  .content-title { font-size:28px; font-weight:bold; }
+  /* Improved project header styling */
+  #projectTitle.content-title, .content-title#projectTitle { font-size:32px; font-weight:700; letter-spacing: -0.4px; color: #F5F5F5; margin-bottom:6px; }
+  #projectMeta { font-size:15px; color:#CFCFCF; line-height:1.4; margin-bottom:10px; max-width:920px; }
+  /* Make tags visually lighter and rounded with subtle background */
+  #projectMeta .tag, .project-tags .tag { background-color: rgba(255,255,255,0.03); color:#E6E6E6; padding:6px 10px; border-radius:999px; font-size:12px; margin-right:6px; margin-top:6px; display:inline-block; }
+  /* Ensure tags wrap cleanly and have spacing */
+  #projectMeta { display:block; word-break:break-word; }
+  #projectMeta .tag { margin-bottom:6px; }
+  /* Project description styling to look intentional */
+  #projectMeta p { margin:0 0 8px 0; color:#DCDCDC; font-size:15px; }
+  /* Make the project name stand out and avoid placeholder look */
+  .content-title#projectTitle { text-transform:none; letter-spacing: -0.6px; color:#FFFFFF; text-shadow:0 1px 0 rgba(0,0,0,0.6); }
+  /* Make description slightly subdued but clearly styled */
+  #projectMeta p { color:#D0D0D0; opacity:0.95; }
+  /* Ensure small action controls (embed button) uses accent and is visually consistent */
+  #embedMissingBtn { background-color: var(--accent-color); color: #fff; border: 1px solid rgba(0,0,0,0.4); box-shadow: 0 2px 6px rgba(0,0,0,0.35); }
+
+  /* Accent-style for small action buttons (embed) */
+  #embedMissingBtn { background-color: var(--accent-color); color: #fff; border: none; }
+  /* Compact wrapper for meta (description + tags) */
+  .project-header { display:flex; flex-direction:column; gap:6px; }
+    .section { background-color:#1E1E1E; border-radius:8px; padding:20px; margin-bottom:25px; }
+    .section-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; padding-bottom:10px; border-bottom:2px solid #333; }
+    .section-title { font-size:20px; font-weight:600; color:var(--accent-color); }
+    .form-group { margin-bottom:15px; }
+    .form-label { display:block; margin-bottom:6px; font-size:14px; color:#BBB; }
+    .form-input, .form-select, .form-textarea { width:100%; padding:10px; background-color:#252525; border:1px solid #333; border-radius:4px; color:#E0E0E0; font-size:14px; }
+    .form-input:focus, .form-select:focus, .form-textarea:focus { outline:none; border-color:var(--accent-color); }
+    .form-textarea { resize:vertical; min-height:80px; }
+    .form-row { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:15px; }
+    table { width:100%; border-collapse:collapse; }
+    th, td { padding:12px; text-align:left; border-bottom:1px solid #333; }
+    th { background-color:#252525; font-weight:600; color:var(--accent-color); }
+    .note-item { background-color:#252525; padding:15px; border-radius:4px; margin-bottom:10px; position:relative; }
+    .note-content { margin-bottom:8px; word-wrap:break-word; }
+    .note-content a { color:var(--accent-color); text-decoration:none; }
+    .note-content a:hover { text-decoration:underline; }
+    .note-timestamp { font-size:11px; color:#666; }
+    .note-actions { position:absolute; top:10px; right:10px; display:flex; gap:5px; }
+    .icon-btn { background:none; border:none; color:#999; cursor:pointer; font-size:16px; padding:4px; transition:color 0.2s; }
+    .icon-btn:hover { color:var(--accent-color); }
+    .modal { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background-color:rgba(0,0,0,0.8); z-index:1000; align-items:center; justify-content:center; }
+    .modal.active { display:flex; }
+    .modal-content { background-color:#1E1E1E; border-radius:8px; padding:30px; max-width:600px; width:90%; max-height:90vh; overflow-y:auto; }
+    .modal-header { font-size:22px; font-weight:bold; margin-bottom:20px; color:var(--accent-color); }
+    .modal-actions { display:flex; gap:10px; justify-content:flex-end; margin-top:20px; }
+    .empty-state { text-align:center; padding:40px; color:#666; }
+    .cost-summary { background-color:#252525; padding:15px; border-radius:4px; margin-top:15px; }
+    .cost-row { display:flex; justify-content:space-between; margin-bottom:8px; }
+    .cost-total { font-size:18px; font-weight:bold; color:var(--accent-color); padding-top:8px; border-top:1px solid #333; }
+    .hamburger-overlay { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background-color:rgba(0,0,0,0.5); z-index:998; }
+
+    @media (max-width: 768px) {
+      .sidebar { position: fixed; left:0; top:0; height:100%; z-index:999; transform:translateX(-100%); }
+      .sidebar.open { transform:translateX(0); }
+      .menu-toggle { display:block; }
+      .hamburger-overlay.active { display:block; }
+      .main-content { padding:15px; }
+      .form-row { grid-template-columns: 1fr; }
+      table { font-size:12px; }
+      th, td { padding:8px 4px; }
+    }
+
+    .tag { display:inline-block; background-color:#333; color:#E0E0E0; padding:3px 8px; border-radius:3px; font-size:11px; margin-right:4px; margin-top:4px; }
+    .status-badge { display:inline-block; padding:4px 8px; border-radius:3px; font-size:12px; font-weight:500; }
+    .status-ordered { background-color:#FF6B00; color:white; }
+    .status-received { background-color:#00AA00; color:white; }
+    .status-pending { background-color:#666; color:white; }
+    .inline-edit { background-color:#1A1A1A; border:1px solid var(--accent-color); }
+
+    .chip { display:inline-flex; align-items:center; gap:6px; padding:4px 8px; border-radius:16px; background:#202020; color:#E0E0E0; font-size:12px; margin-right:6px; margin-top:6px; }
+    .chip .remove-chip { background:none; border:none; color:#999; cursor:pointer; font-size:12px; padding:0 4px; }
+    .chip .remove-chip:hover { color:var(--accent-color); }
+
+    .lookup-wrapper { position:relative; }
+    .lookup-input { width:100%; padding:10px; background-color:#252525; border:1px solid #333; border-radius:4px; color:#E0E0E0; }
+    .lookup-dropdown { position:absolute; z-index:1200; left:0; right:0; background:#171717; border:1px solid #333; max-height:240px; overflow-y:auto; border-radius:4px; margin-top:6px; }
+    .lookup-item { padding:8px 10px; cursor:pointer; display:flex; justify-content:space-between; gap:8px; align-items:center; }
+    .lookup-item:hover { background:#222; }
+    .lookup-meta { font-size:12px; color:#999; }
+
+    .pane-anim-hidden { display:none; }
+
+    .pack-badge { display:inline-block; padding:4px 8px; border-radius:12px; background:#333; color:#fff; font-size:12px; margin-left:8px; }
+    .pack-badge strong { color:#FFDD99; }
+
+    .kit-container { margin-top:8px; padding:8px; background:#0b0b0b; border-radius:6px; }
+    .kit-row { display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px dashed #151515; }
+    .kit-row:last-child { border-bottom:none; }
+    .kit-row .kit-name { flex:1; }
+    .kit-actions { display:flex; gap:8px; align-items:center; }
+    .kit-toggle { margin-left:8px; }
+
+    .backup-list-item { display:flex; justify-content:space-between; align-items:center; padding:8px; border-bottom:1px solid #222; }
+    .backup-meta { font-size:13px; }
+    .backup-actions { display:flex; gap:8px; }
+
+    .btn-compact { padding:6px 8px; font-size:12px; }
+
+    .included-badge { display:inline-block; padding:4px 8px; border-radius:12px; background:var(--accent-color); color:#fff; font-size:12px; margin-left:8px; }
+    .included-row { border-left:3px solid var(--accent-color); background:linear-gradient(90deg, rgba(0,0,0,0.02), transparent); }
+    .disabled-when-included { opacity:0.5; }
+  }
